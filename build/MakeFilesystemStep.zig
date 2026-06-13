@@ -61,16 +61,17 @@ pub fn create(
         self.step.dependOn(&artifact.step);
     }
 
-    owner.pushInstalledFile(self.dest_dir, dest_filename);
+    //  TODO: remove
+    // owner.pushInstalledFile(self.dest_dir, dest_filename);
     return self;
 }
 
 pub fn getOutputSource(self: *const MakeFilesystemStep) std.Build.LazyPath {
-    return std.Build.LazyPath{ .generated = &self.output_file };
+    return .{ .generated = .{ .file = &self.output_file } };
 }
 
-fn make(step: *Step, prog_node: *std.Progress.Node) !void {
-    _ = prog_node;
+fn make(step: *Step, options: Step.MakeOptions) !void {
+    _ = options;
     const self: *MakeFilesystemStep = @fieldParentPtr("step", step);
     const b = self.step.owner;
 

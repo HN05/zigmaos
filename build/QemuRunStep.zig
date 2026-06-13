@@ -57,8 +57,8 @@ pub fn create(
     return self;
 }
 
-fn make(step: *Step, prog_node: *std.Progress.Node) !void {
-    _ = prog_node;
+fn make(step: *Step, options: Step.MakeOptions) !void {
+    _ = options;
     const self: *QemuRunStep = @alignCast(@fieldParentPtr("step", step));
 
     if (!self.step.owner.enable_qemu) {

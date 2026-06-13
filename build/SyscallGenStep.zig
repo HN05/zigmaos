@@ -25,11 +25,11 @@ pub fn create(owner: *std.Build, syscalls: []const []const u8) *SyscallGenStep {
 }
 
 pub fn getLazyPath(self: *SyscallGenStep) std.Build.LazyPath {
-    return .{ .generated = &self.output_file };
+    return .{ .generated = .{ .file = &self.output_file } };
 }
 
-fn make(step: *Step, prog_node: *std.Progress.Node) !void {
-    _ = prog_node;
+fn make(step: *Step, options: Step.MakeOptions) !void {
+    _ = options;
     const b = step.owner;
     const self: *SyscallGenStep = @fieldParentPtr("step", step);
     const gpa = b.allocator;
@@ -84,7 +84,10 @@ fn make(step: *Step, prog_node: *std.Progress.Node) !void {
         });
     };
 
-    b.cache_root.handle.writeFile(sub_path, output.items) catch |err| {
+    b.cache_root.handle.writeFile(.{
+        .sub_path = sub_path,
+        .data = output.items
+    }) catch |err| {
         return step.fail("unable to write file '{}{s}': {s}", .{
             b.cache_root, sub_path, @errorName(err),
         });

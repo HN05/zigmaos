@@ -151,10 +151,10 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = std.builtin.Mode.ReleaseSmall,
     });
-    kernel.root_module.addAnonymousImport("common", .{ .root_source_file = .{ .path = "src/common/mod.zig" } });
+    kernel.root_module.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
     kernel.addCSourceFiles(.{ .files = &kernel_src, .flags = &cflags });
-    kernel.addIncludePath(.{ .path = "src" });
-    kernel.setLinkerScript(.{ .path = kernel_linker });
+    kernel.addIncludePath(b.path("src"));
+    kernel.setLinkerScript(b.path(kernel_linker));
     kernel.entry = .{ .symbol_name = "_entry" };
     kernel.root_module.strip = false;
     kernel.root_module.single_threaded = true;
@@ -166,14 +166,14 @@ pub fn build(b: *std.Build) !void {
 
     const ulib = b.addStaticLibrary(.{
         .name = "ulib",
-        .root_source_file = .{ .path = "src/user/ulib/ulib.zig" },
+        .root_source_file = b.path("src/user/ulib/ulib.zig"),
         .optimize = std.builtin.Mode.ReleaseSafe,
         .target = target,
     });
     ulib.root_module.single_threaded = true;
-    ulib.root_module.addAnonymousImport("common", .{ .root_source_file = .{ .path = "src/common/mod.zig" } });
+    ulib.root_module.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
     ulib.addCSourceFile(.{ .file = syscall_gen_step.getLazyPath(), .flags = &cflags });
-    ulib.addIncludePath(.{ .path = "src" });
+    ulib.addIncludePath(b.path("src"));
 
     var artifacts = std.ArrayList(*CompileStep).init(b.allocator);
     inline for (user_progs) |prog| {
@@ -182,13 +182,13 @@ pub fn build(b: *std.Build) !void {
                 const src = "src/user/" ++ prog.name ++ ".zig";
                 const user_prog = b.addExecutable(.{
                     .name = prog.name,
-                    .root_source_file = .{ .path = src },
+                    .root_source_file = b.path(src),
                     .optimize = std.builtin.Mode.ReleaseSafe,
                     .target = target,
                 });
                 user_prog.step.dependOn(&ulib.step);
                 user_prog.linkLibrary(ulib);
-                user_prog.root_module.addAnonymousImport("common", .{ .root_source_file = .{ .path = "src/common/mod.zig" } });
+                user_prog.root_module.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
                 user_prog.addCSourceFiles(.{ .files = &ulib_z_src, .flags = &cflags });
                 break :blk user_prog;
             } else {
@@ -206,8 +206,8 @@ pub fn build(b: *std.Build) !void {
                 break :blk user_prog;
             }
         };
-        user_prog.addIncludePath(.{ .path = "src" });
-        user_prog.setLinkerScript(.{ .path = user_linker });
+        user_prog.addIncludePath(b.path("src"));
+        user_prog.setLinkerScript(b.path(user_linker));
         user_prog.root_module.single_threaded = true;
         user_prog.root_module.code_model = .medium;
         user_prog.entry = .{ .symbol_name = "_main" };
