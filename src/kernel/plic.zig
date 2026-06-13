@@ -6,7 +6,6 @@ const ml = @import("memlayout.zig");
 
 const c = @cImport({
     @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
     @cInclude("kernel/riscv.h");
     @cInclude("kernel/defs.h");
 });
