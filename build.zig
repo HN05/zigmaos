@@ -145,76 +145,87 @@ pub fn build(b: *std.Build) !void {
     const kernel_linker = "build/linker/kernel.ld";
     const user_linker = "build/linker/user.ld";
 
-    const kernel = b.addExecutable(.{
-        .name = "kernel",
+    const kernel_mod = b.createModule(.{
         .root_source_file = b.path("src/kernel/start.zig"),
         .target = target,
-        .optimize = std.builtin.Mode.ReleaseSmall,
+        .optimize = .ReleaseSmall,
     });
+
+    const kernel = b.addExecutable(.{ .name = "kernel", .root_module = kernel_mod });
     kernel.root_module.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
-    kernel.addCSourceFiles(.{ .files = &kernel_src, .flags = &cflags });
-    kernel.addIncludePath(b.path("src"));
+    kernel_mod.addCSourceFiles(.{ .files = &kernel_src, .flags = &cflags });
+    kernel_mod.addIncludePath(b.path("src"));
     kernel.setLinkerScript(b.path(kernel_linker));
     kernel.entry = .{ .symbol_name = "_entry" };
     kernel.root_module.strip = false;
     kernel.root_module.single_threaded = true;
     kernel.root_module.code_model = .medium;
-    kernel.want_lto = true;
+    kernel.lto = .full;
     b.installArtifact(kernel);
 
     const syscall_gen_step = addSyscallGen(b, &syscalls);
 
-    const ulib = b.addStaticLibrary(.{
-        .name = "ulib",
+    const ulib_mod = b.createModule(.{
         .root_source_file = b.path("src/user/ulib/ulib.zig"),
-        .optimize = std.builtin.Mode.ReleaseSafe,
+        .optimize = .ReleaseSafe,
         .target = target,
     });
-    ulib.root_module.single_threaded = true;
-    ulib.root_module.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
-    ulib.addCSourceFile(.{ .file = syscall_gen_step.getLazyPath(), .flags = &cflags });
-    ulib.addIncludePath(b.path("src"));
+    ulib_mod.addCSourceFile(.{ .file = syscall_gen_step.getLazyPath(), .flags = &cflags });
+    ulib_mod.addIncludePath(b.path("src"));
+    ulib_mod.single_threaded = true;
+    ulib_mod.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
 
-    var artifacts = std.ArrayList(*CompileStep).init(b.allocator);
+    const ulib = b.addLibrary(.{
+        .name = "ulib",
+        .root_module = ulib_mod,
+    });
+
+    var artifacts: std.ArrayList(*CompileStep) = .empty;
     inline for (user_progs) |prog| {
-        const user_prog = blk: {
+        const user_prog_mod = blk: {
             if (prog.type == .zig) {
                 const src = "src/user/" ++ prog.name ++ ".zig";
-                const user_prog = b.addExecutable(.{
-                    .name = prog.name,
+
+                const user_prog_mod = b.createModule(.{
                     .root_source_file = b.path(src),
-                    .optimize = std.builtin.Mode.ReleaseSmall,
+                    .optimize = .ReleaseSmall,
                     .target = target,
                 });
-                user_prog.step.dependOn(&ulib.step);
-                user_prog.linkLibrary(ulib);
-                user_prog.root_module.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
-                user_prog.addCSourceFiles(.{ .files = &ulib_z_src, .flags = &cflags });
-                break :blk user_prog;
+
+                user_prog_mod.addAnonymousImport("common", .{ .root_source_file = b.path("src/common/mod.zig") });
+                user_prog_mod.addCSourceFiles(.{ .files = &ulib_z_src, .flags = &cflags });
+                break :blk user_prog_mod;
             } else {
                 const src = "src/user/" ++ prog.name ++ ".c";
                 const src_files = &[_][]const u8{src} ++ ulib_c_src;
-                const exe_name = "_" ++ prog.name;
-                const user_prog = b.addExecutable(.{
-                    .name = exe_name,
+
+                const user_prog_mod = b.createModule(.{
                     .target = target,
-                    .optimize = std.builtin.Mode.ReleaseSmall,
+                    .optimize = .ReleaseSmall,
                 });
-                user_prog.step.dependOn(&ulib.step);
-                user_prog.linkLibrary(ulib);
-                user_prog.addCSourceFiles(.{ .files = src_files, .flags = &cflags });
-                break :blk user_prog;
+
+                user_prog_mod.addCSourceFiles(.{ .files = src_files, .flags = &cflags });
+                break :blk user_prog_mod;
             }
         };
-        user_prog.addIncludePath(b.path("src"));
+        user_prog_mod.linkLibrary(ulib);
+        user_prog_mod.single_threaded = true;
+        user_prog_mod.code_model = .medium;
+        user_prog_mod.addIncludePath(b.path("src"));
+
+        const exe_name = if (prog.type == .c) "_" ++ prog.name else prog.name;
+        const user_prog = b.addExecutable(.{
+            .name = exe_name,
+            .root_module = user_prog_mod,
+        });
+
+        user_prog.step.dependOn(&ulib.step);
         user_prog.setLinkerScript(b.path(user_linker));
-        user_prog.root_module.single_threaded = true;
-        user_prog.root_module.code_model = .medium;
         user_prog.entry = .{ .symbol_name = "_main" };
         // user_prog.root_module.strip = false;
         user_prog.step.dependOn(&syscall_gen_step.step);
         b.installArtifact(user_prog);
-        try artifacts.append(user_prog);
+        try artifacts.append(b.allocator, user_prog);
     }
 
     const image = installFilesystem(b, artifacts, "fs.img");
