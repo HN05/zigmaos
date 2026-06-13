@@ -60,15 +60,16 @@ pub fn create(
 fn make(step: *Step, options: Step.MakeOptions) !void {
     _ = options;
     const self: *QemuRunStep = @alignCast(@fieldParentPtr("step", step));
+    const allocator = self.step.owner.allocator;
 
     if (!self.step.owner.enable_qemu) {
         return;
     }
 
-    var argv_list = std.ArrayList([]const u8).init(self.step.owner.allocator);
-    defer argv_list.deinit();
+    var argv_list: std.ArrayList([]const u8) = .empty;
+    defer argv_list.deinit(allocator);
 
-    try argv_list.appendSlice(&[_][]const u8{
+    try argv_list.appendSlice(allocator, &[_][]const u8{
         "qemu-system-riscv64",
         "-machine",
         "virt",
@@ -85,14 +86,14 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
         "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0",
     });
     if (self.use_gdb) {
-        try argv_list.appendSlice(&[_][]const u8{
+        try argv_list.appendSlice(allocator, &[_][]const u8{
             "-s",
             "-S",
         });
     }
 
     const kernel_path = self.kernel.getEmittedBin().getPath(self.step.owner);
-    try argv_list.appendSlice(&[_][]const u8{
+    try argv_list.appendSlice(allocator, &[_][]const u8{
         "-kernel",
         kernel_path,
     });
@@ -105,7 +106,7 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
     });
     defer self.step.owner.allocator.free(drive_arg);
 
-    try argv_list.appendSlice(&[_][]const u8{
+    try argv_list.appendSlice(allocator, &[_][]const u8{
         "-drive",
         drive_arg,
     });
