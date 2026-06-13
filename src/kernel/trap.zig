@@ -40,7 +40,7 @@ pub fn initHart() void {
 // called from trampoline.S
 //
 export fn usertrap() void {
-    if (registers.SSTATUS.isEnabled(.SPP, registers.r_sstatus())) {
+    if (registers.Sstatus.isSet(.SPP)) {
         @panic("usertrap: not from user mode");
     }
 
@@ -67,7 +67,7 @@ export fn usertrap() void {
 
             // an interrupt will change sepc, scause, and sstatus,
             // so enable only now that we're done with those registers.
-            registers.intr_on();
+            registers.interrupts_on();
 
             c.syscall();
         },
@@ -105,7 +105,7 @@ export fn usertrapret() void {
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
-    registers.intr_off();
+    registers.interrupts_off();
 
     // send syscalls, interrupts, and exceptions to uservec in trampoline.S
     const trampoline_uservec = memlayout.TRAMPOLINE + (uservecAddr - trampolineAddr);
@@ -123,10 +123,8 @@ export fn usertrapret() void {
     // to get to user space.
 
     // set S Previous Privilege mode to User.
-    var sstatus = registers.r_sstatus();
-    sstatus = registers.SSTATUS.disable(.SPP, sstatus); // clear SPP to 0 for user mode
-    sstatus = registers.SSTATUS.enable(.SPIE, sstatus); // enable interrupts in user mode
-    registers.w_sstatus(sstatus);
+    registers.Sstatus.clear(.SPP); // clear SPP to 0 for user mode
+    registers.Sstatus.set(.SPIE); // enable interrupts in user mode
 
     // set S Exception Program Counter to the saved user pc.
     registers.w_sepc(trapframe.epc);
@@ -145,13 +143,13 @@ export fn usertrapret() void {
 // on whatever the current kernel stack is.
 export fn kerneltrap() void {
     const sepc = registers.r_sepc();
-    const sstatus = registers.r_sstatus();
+    const sstatus = registers.Sstatus.read();
     const scause = registers.readScause();
 
-    if (!registers.SSTATUS.isEnabled(.SPP, sstatus)) {
+    if (!registers.Sstatus.isSet(.SPP)) {
         @panic("kerneltrap: not from supervisor mode");
     }
-    if (registers.intr_get()) {
+    if (registers.interrupts_is_on()) {
         @panic("kerneltrap: interrupts enabled");
     }
 
@@ -171,7 +169,7 @@ export fn kerneltrap() void {
     // the yield() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
     registers.w_sepc(sepc);
-    registers.w_sstatus(sstatus);
+    registers.Sstatus.write(sstatus);
 }
 
 fn clockintr() void {

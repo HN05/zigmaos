@@ -1,7 +1,56 @@
 const std = @import("std");
 const PageTable = @import("pagetable.zig").PageTable;
 
-// Much of this code comes from https://github.com/binarycraft007/xv6-riscv-zig
+fn BitOps(comptime Bit: type) type {
+    return struct {
+        pub inline fn mask(bit: Bit) usize {
+            return @intFromEnum(bit);
+        }
+
+        pub inline fn set(bit: Bit, value: usize) usize {
+            return value | mask(bit);
+        }
+
+        pub inline fn clear(bit: Bit, value: usize) usize {
+            return value & ~mask(bit);
+        }
+
+        pub inline fn isSet(bit: Bit, value: usize) bool {
+            return (value & mask(bit)) != 0;
+        }
+    };
+}
+
+fn Csr(comptime name: []const u8, comptime Bit: type) type {
+    return struct {
+        pub const bits = BitOps(Bit);
+
+        pub inline fn read() usize {
+            return asm volatile ("csrr a0, " ++ name
+                : [ret] "={a0}" (-> usize),
+            );
+        }
+
+        pub inline fn write(value: usize) void {
+            asm volatile ("csrw " ++ name ++ ", a0"
+                :
+                : [value] "{a0}" (value),
+            );
+        }
+
+        pub inline fn set(bit: Bit) void {
+            write(bits.set(bit, read()));
+        }
+
+        pub inline fn clear(bit: Bit) void {
+            write(bits.clear(bit, read()));
+        }
+
+        pub inline fn isSet(bit: Bit) bool {
+            return bits.isSet(bit, read());
+        }
+    };
+}
 
 pub inline fn r_mhartid() usize {
     return asm volatile ("csrr a0, mhartid"
@@ -38,39 +87,16 @@ pub inline fn w_mepc(counter: usize) void {
     );
 }
 
-pub const SSTATUS = enum(usize) {
+pub const SstatusBit = enum(usize) {
     SPP = 1 << 8, // Previous mode, 1=Supervisor, 0=User
     SPIE = 1 << 5, // Supervisor Previous Interrupt Enable
     UPIE = 1 << 4, // User Previous Interrupt Enable
     SIE = 1 << 1, // Supervisor Interrupt Enable
     UIE = 1 << 0, // User Interrupt Enable
-
-
-    pub fn enable(self: SSTATUS, value: usize) usize {
-        return value | @intFromEnum(self);
-    }
-
-    pub fn disable(self: SSTATUS, value: usize) usize {
-        return value & ~@intFromEnum(self);
-    }
-
-    pub fn isEnabled(self: SSTATUS, value: usize) bool { 
-        return (value & @intFromEnum(self)) != 0;
-    }
 };
 
-pub inline fn r_sstatus() usize {
-    return asm volatile ("csrr a0, sstatus"
-        : [ret] "={a0}" (-> usize),
-    );
-}
+pub const Sstatus = Csr("sstatus", SstatusBit);
 
-pub inline fn w_sstatus(sstatus: usize) void {
-    asm volatile ("csrw sstatus, a0"
-        :
-        : [sstatus] "{a0}" (sstatus),
-    );
-}
 
 // Supervisor Interrupt Pending
 pub const SIP = enum(usize) {
@@ -395,17 +421,17 @@ pub inline fn r_time() usize {
 }
 
 // enable device interrupts
-pub inline fn intr_on() void {
-    w_sstatus(r_sstatus() | @intFromEnum(SSTATUS.SIE));
+pub inline fn interrupts_on() void {
+    Sstatus.set(.SIE);
 }
 
 // disable device interrupts
-pub inline fn intr_off() void {
-    w_sstatus(r_sstatus() & ~@intFromEnum(SSTATUS.SIE));
+pub inline fn interrupts_off() void {
+    Sstatus.clear(.SIE);
 }
 
 // are device interrupts enabled?
-pub inline fn intr_get() bool {
-    return (r_sstatus() & @intFromEnum(SSTATUS.SIE)) != 0;
+pub inline fn interrupts_is_on() bool {
+    return Sstatus.isSet(.SIE);
 }
 
