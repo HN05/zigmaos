@@ -1,7 +1,7 @@
 const std = @import("std");
 const SpinLock = @import("spinlock.zig").SpinLock;
 const memlayout = @import("../kernel/memlayout.zig");
-const riscv = @import("common").riscv;
+const pagesize = @import("common").riscv.pagesize;
 const assert = std.debug.assert;
 const log = std.log.scoped(.kalloc);
 
@@ -23,11 +23,11 @@ pub export fn kinit() void {
 
 pub export fn freerange(pa_start: *anyopaque, pa_end: *anyopaque) void {
     const p_start_offset: usize = @intFromPtr(pa_start);
-    var p_offset = std.mem.alignForward(usize, p_start_offset, riscv.PGSIZE);
+    var p_offset = std.mem.alignForward(usize, p_start_offset, pagesize);
     const p_end_offset: usize = @intFromPtr(pa_end);
-    while (p_offset + riscv.PGSIZE <= p_end_offset) : (p_offset += riscv.PGSIZE) {
+    while (p_offset + pagesize <= p_end_offset) : (p_offset += pagesize) {
         const ptr: [*]u8 = @ptrFromInt(p_offset);
-        freePage(@alignCast(ptr[0..riscv.PGSIZE])) catch {
+        freePage(@alignCast(ptr[0..pagesize])) catch {
             @panic("freerange error");
         };
     }
@@ -35,7 +35,7 @@ pub export fn freerange(pa_start: *anyopaque, pa_end: *anyopaque) void {
 
 pub export fn kfree(pa: *anyopaque) void {
     const ptr: [*]u8 = @ptrCast(pa);
-    freePage(@alignCast(ptr[0..riscv.PGSIZE])) catch {
+    freePage(@alignCast(ptr[0..pagesize])) catch {
         @panic("kfree error");
     };
 }
@@ -51,12 +51,12 @@ pub export fn kalloc() ?*anyopaque {
 /// Failures are in the case of a bad given address
 pub fn freePage(pa: PagePtr) !void {
     const pa_u: usize = @intFromPtr(pa);
-    if (pa_u % riscv.PGSIZE != 0) return error.AddressNotPageAligned;
+    if (pa_u % pagesize != 0) return error.AddressNotPageAligned;
     const end_u: usize = @intFromPtr(end);
     if (pa_u < end_u) return error.AddressTooLow;
     if (pa_u >= memlayout.PHYSTOP) return error.AddressTooHigh;
     // // Fill with junk to catch dangling refs.
-    @memset(pa[0..riscv.PGSIZE], 1);
+    @memset(pa[0..pagesize], 1);
     const b: *Block = @alignCast(@ptrCast(pa));
     lock.acquire();
     defer lock.release();
@@ -64,7 +64,7 @@ pub fn freePage(pa: PagePtr) !void {
     freelist = b;
 }
 
-pub const PagePtr = *align(riscv.PGSIZE) [riscv.PGSIZE]u8;
+pub const PagePtr = *align(pagesize) [pagesize]u8;
 
 pub fn allocPage() ?PagePtr {
     lock.acquire();
@@ -75,13 +75,13 @@ pub fn allocPage() ?PagePtr {
     }
     if (r_o) |r| {
         const ptr: [*]u8 = @ptrCast(r);
-        @memset(ptr[0..riscv.PGSIZE], 5);
+        @memset(ptr[0..pagesize], 5);
     } else {
         // log.warn("out of memory", .{});
         return null;
     }
-    const ptr: [*]align(riscv.PGSIZE) u8 = @alignCast(@ptrCast(r_o.?));
-    return ptr[0..riscv.PGSIZE];
+    const ptr: [*]align(pagesize) u8 = @alignCast(@ptrCast(r_o.?));
+    return ptr[0..pagesize];
 }
 
 pub const page_allocator = std.mem.Allocator{
@@ -97,29 +97,29 @@ fn alloc(_: *anyopaque, n: usize, log2_align: u8, ra: usize) ?[*]u8 {
     _ = ra;
     _ = log2_align;
     assert(n > 0);
-    if (n > std.math.maxInt(usize) - (riscv.PGSIZE - 1)) return null;
-    if (n > riscv.PGSIZE) @panic("Unimplemented: n > PGSIZE");
-    const aligned_len = std.mem.alignForward(usize, n, riscv.PGSIZE);
-    const page_count = aligned_len / riscv.PGSIZE;
+    if (n > std.math.maxInt(usize) - (pagesize - 1)) return null;
+    if (n > pagesize) @panic("Unimplemented: n > PGSIZE");
+    const aligned_len = std.mem.alignForward(usize, n, pagesize);
+    const page_count = aligned_len / pagesize;
     var start_slice = allocPage() orelse return null;
     for (1..page_count) |i| {
         const new_slice = allocPage() orelse {
             for (0..i) |j| {
-                freePage(@alignCast(start_slice.ptr[j * riscv.PGSIZE ..][0..riscv.PGSIZE])) catch @panic("Alloc failed");
+                freePage(@alignCast(start_slice.ptr[j * pagesize ..][0..pagesize])) catch @panic("Alloc failed");
             }
             return null;
         };
         const start_ptr_u: usize = @ptrFromInt(start_slice.ptr);
         const new_ptr_u: usize = @ptrFromInt(new_slice.ptr);
-        if (start_ptr_u + i * riscv.PGSIZE != new_ptr_u) {
+        if (start_ptr_u + i * pagesize != new_ptr_u) {
             for (0..i) |j| {
-                freePage(@alignCast(start_slice.ptr[j * riscv.PGSIZE ..][0..riscv.PGSIZE])) catch @panic("Freeing after alloc failure failed");
+                freePage(@alignCast(start_slice.ptr[j * pagesize ..][0..pagesize])) catch @panic("Freeing after alloc failure failed");
             }
             freePage(new_slice) catch @panic("Freeing after alloc failure failed");
             return null;
         }
     }
-    assert(std.mem.isAligned(@intFromPtr(start_slice.ptr), riscv.PGSIZE));
+    assert(std.mem.isAligned(@intFromPtr(start_slice.ptr), pagesize));
     return start_slice.ptr;
 }
 
@@ -132,12 +132,12 @@ fn resize(
 ) bool {
     _ = return_address;
     _ = log2_buf_align;
-    const new_size_aligned = std.mem.alignForward(usize, new_size, riscv.PGSIZE);
-    const buf_aligned_len = std.mem.alignForward(usize, buf_unaligned.len, riscv.PGSIZE);
+    const new_size_aligned = std.mem.alignForward(usize, new_size, pagesize);
+    const buf_aligned_len = std.mem.alignForward(usize, buf_unaligned.len, pagesize);
     if (new_size_aligned == buf_aligned_len) return true;
     if (new_size_aligned < buf_aligned_len) {
-        for (0..(buf_aligned_len - new_size_aligned) / riscv.PGSIZE) |i| {
-            freePage(@alignCast(buf_unaligned.ptr[i * riscv.PGSIZE ..][0..riscv.PGSIZE])) catch @panic("Could not free page");
+        for (0..(buf_aligned_len - new_size_aligned) / pagesize) |i| {
+            freePage(@alignCast(buf_unaligned.ptr[i * pagesize ..][0..pagesize])) catch @panic("Could not free page");
         }
         return true;
     }
@@ -147,9 +147,9 @@ fn resize(
 fn free(_: *anyopaque, slice: []u8, log2_buf_align: u8, return_address: usize) void {
     _ = return_address;
     _ = log2_buf_align;
-    const buf_aligned_len = std.mem.alignForward(usize, slice.len, riscv.PGSIZE);
-    const page_count = buf_aligned_len / riscv.PGSIZE;
+    const buf_aligned_len = std.mem.alignForward(usize, slice.len, pagesize);
+    const page_count = buf_aligned_len / pagesize;
     for (0..page_count) |i| {
-        freePage(@alignCast(slice.ptr[i * riscv.PGSIZE ..][0..riscv.PGSIZE])) catch @panic("Could not free page");
+        freePage(@alignCast(slice.ptr[i * pagesize ..][0..pagesize])) catch @panic("Could not free page");
     }
 }

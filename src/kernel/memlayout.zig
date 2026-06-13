@@ -65,12 +65,12 @@ pub const PHYSTOP = KERNBASE + 128 * 1024 * 1024;
 
 // map the trampoline page to the highest address,
 // in both user and kernel space.
-pub const TRAMPOLINE = riscv.MAXVA - riscv.PGSIZE;
+pub const TRAMPOLINE = riscv.max_virtual_address - riscv.pagesize;
 
 // map kernel stacks beneath the trampoline,
 // each surrounded by invalid guard pages.
 pub inline fn KSTACK(p: usize) usize {
-    return TRAMPOLINE - (p + 1) * 2 * riscv.PGSIZE;
+    return TRAMPOLINE - (p + 1) * 2 * riscv.pagesize;
 }
 
 // User memory layout.
@@ -82,4 +82,4 @@ pub inline fn KSTACK(p: usize) usize {
 //   ...
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
-pub const TRAPFRAME = TRAMPOLINE - riscv.PGSIZE;
+pub const TRAPFRAME = TRAMPOLINE - riscv.pagesize;

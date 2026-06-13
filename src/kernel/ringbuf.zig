@@ -9,7 +9,7 @@ const c = @cImport({
     @cInclude("kernel/proc.h");
 });
 const com = @import("common");
-const riscv = com.riscv;
+const pagesize = com.riscv.pagesize;
 const SpinLock = @import("spinlock.zig").SpinLock;
 const kalloc = @import("kalloc.zig");
 const PagePtr = kalloc.PagePtr;
@@ -17,7 +17,7 @@ const Book = com.ringbuf.Book;
 const MagicBuf = com.ringbuf.MagicBuf;
 const Rb = com.ringbuf;
 
-// we expose these in common because they will be used by the user lib
+// we expose these in common because they will be usIed by the user lib
 const RINGBUF_SIZE = com.ringbuf.RINGBUF_SIZE;
 const MAX_NAME_LEN = com.ringbuf.MAX_NAME_LEN;
 const MAX_RINGBUFS = com.ringbuf.MAX_RINGBUFS;
@@ -116,7 +116,7 @@ const Ringbuf = extern struct {
         };
         owner.proc = null;
         if (owner.vbuf) |vbuf| {
-            c.uvmunmap(proc.pagetable, @intFromPtr(vbuf), vbuf.len / riscv.PGSIZE, 0);
+            c.uvmunmap(proc.pagetable, @intFromPtr(vbuf), vbuf.len / pagesize, 0);
             owner.vbuf = null;
         } else @panic("disowning a ringbuf without a vbuf");
         if (owner.vbook) |vbook_p| {
@@ -156,7 +156,7 @@ fn findRingbufByName(name: []const u8) ?*Ringbuf {
 ///
 ///  We use the process's top_free_uvm_pg to find a slot in the userspace.
 ///  We map the ringbuf twice contiguously, and the book page right under it.
-fn ringbuf(name_str: [*:0]const u8, op: Rb.Op, addr_va: *?*align(riscv.PGSIZE) anyopaque) Rb.RingbufError!void {
+fn ringbuf(name_str: [*:0]const u8, op: Rb.Op, addr_va: *?*align(pagesize) anyopaque) Rb.RingbufError!void {
     spinlock.acquire();
     defer spinlock.release();
 
@@ -213,11 +213,11 @@ fn ringbuf(name_str: [*:0]const u8, op: Rb.Op, addr_va: *?*align(riscv.PGSIZE) a
                     if (0 > c.mappages(
                         proc.pagetable,
                         proc.top_free_uvm_pg,
-                        riscv.PGSIZE,
+                        pagesize,
                         @intFromPtr(pg),
                         perm,
                     )) return error.MapPagesFailed;
-                    proc.top_free_uvm_pg -= riscv.PGSIZE;
+                    proc.top_free_uvm_pg -= pagesize;
                 }
             }
             // map the book page right under the ringbuf
@@ -225,16 +225,16 @@ fn ringbuf(name_str: [*:0]const u8, op: Rb.Op, addr_va: *?*align(riscv.PGSIZE) a
             if (0 > c.mappages(
                 proc.pagetable,
                 proc.top_free_uvm_pg,
-                riscv.PGSIZE,
+                pagesize,
                 @intFromPtr(rb.book_page.?),
                 perm,
             )) return error.MapPagesFailed;
-            proc.top_free_uvm_pg -= riscv.PGSIZE;
+            proc.top_free_uvm_pg -= pagesize;
             // | btm of ringbuf    |
             // | book              |
             // | top_free_uvm_pg   |
-            const book_vaddr = proc.top_free_uvm_pg + 1 * riscv.PGSIZE;
-            var ringbuf_loc = proc.top_free_uvm_pg + 2 * riscv.PGSIZE;
+            const book_vaddr = proc.top_free_uvm_pg + 1 * pagesize;
+            var ringbuf_loc = proc.top_free_uvm_pg + 2 * pagesize;
             // store the mapped addresses
             owner.vbook = @ptrFromInt(book_vaddr);
             owner.vbuf = @ptrFromInt(ringbuf_loc);
@@ -248,7 +248,7 @@ fn ringbuf(name_str: [*:0]const u8, op: Rb.Op, addr_va: *?*align(riscv.PGSIZE) a
                 @sizeOf(*anyopaque),
             )) return error.CopyOutFailed;
             // leave a guard page
-            proc.top_free_uvm_pg -= riscv.PGSIZE;
+            proc.top_free_uvm_pg -= pagesize;
         },
         .close => {
             var vaddr: ?*anyopaque = null;
@@ -273,7 +273,7 @@ fn ringbuf(name_str: [*:0]const u8, op: Rb.Op, addr_va: *?*align(riscv.PGSIZE) a
             const vbuf_u: usize = @intFromPtr(owner.vbuf);
             const vbook_u: usize = @intFromPtr(owner.vbook);
             if (vbuf_u != ringbuf_vaddr) return error.BadAddr;
-            if (vbook_u != ringbuf_vaddr - riscv.PGSIZE) return error.BadAddr;
+            if (vbook_u != ringbuf_vaddr - pagesize) return error.BadAddr;
 
             if (rb.refcount == 0) return error.AlreadyInactive;
             if (rb.book_page == null) @panic("book page is null");
@@ -290,9 +290,9 @@ fn ringbuf(name_str: [*:0]const u8, op: Rb.Op, addr_va: *?*align(riscv.PGSIZE) a
             // | book              |
             // | guard pg          |
             // | top_free_uvm_pg   | <- old proc.top_free_uvm_pg
-            if (proc.top_free_uvm_pg == ringbuf_vaddr - 3 * riscv.PGSIZE) {
+            if (proc.top_free_uvm_pg == ringbuf_vaddr - 3 * pagesize) {
                 // move up by guard page + book + double mapped ringbuf
-                proc.top_free_uvm_pg += (1 + 1 + 2 * rb.buf_pages.len) * riscv.PGSIZE;
+                proc.top_free_uvm_pg += (1 + 1 + 2 * rb.buf_pages.len) * pagesize;
             }
         },
     }

@@ -1,5 +1,6 @@
 const std = @import("std");
 const SpinLock = @import("spinlock.zig").SpinLock;
+const registers = @import("registers.zig");
 const riscv = @import("common").riscv;
 const memlayout = @import("memlayout.zig");
 const uart = @import("uart.zig");
@@ -31,7 +32,7 @@ pub fn init() void {
 }
 
 pub fn initHart() void {
-    riscv.w_stvec(@intFromPtr(&kernelvec));
+    registers.w_stvec(@intFromPtr(&kernelvec));
 }
 
 //
@@ -39,21 +40,21 @@ pub fn initHart() void {
 // called from trampoline.S
 //
 export fn usertrap() void {
-    if (riscv.SSTATUS.isEnabled(.SPP, riscv.r_sstatus())) {
+    if (registers.SSTATUS.isEnabled(.SPP, registers.r_sstatus())) {
         @panic("usertrap: not from user mode");
     }
 
     // send interrupts and exceptions to kerneltrap(),
     // since we're now in the kernel.
-    riscv.w_stvec(@intFromPtr(&kernelvec));
+    registers.w_stvec(@intFromPtr(&kernelvec));
 
     const process: *c.struct_proc = c.myproc();
     const epc = &process.trapframe[0].epc;
 
     // save user program counter.
-    epc.* = @intCast(riscv.r_sepc());
+    epc.* = @intCast(registers.r_sepc());
 
-    const scause = riscv.readScause();
+    const scause = registers.readScause();
     switch (scause.kind()) {
         .syscall => {
             if (c.killed(process) != 0) {
@@ -66,7 +67,7 @@ export fn usertrap() void {
 
             // an interrupt will change sepc, scause, and sstatus,
             // so enable only now that we're done with those registers.
-            riscv.intr_on();
+            registers.intr_on();
 
             c.syscall();
         },
@@ -75,7 +76,7 @@ export fn usertrap() void {
         },
         .exception => {
             print("usertrap(): unexpected scause {x} pid={d}\n", .{ scause.raw(), process.pid });
-            print("            sepc={x} stval={x}\n", .{ riscv.r_sepc(), riscv.r_stval() });
+            print("            sepc={x} stval={x}\n", .{ registers.r_sepc(), registers.r_stval() });
             c.setkilled(process);
         },
     }
@@ -104,17 +105,17 @@ export fn usertrapret() void {
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
-    riscv.intr_off();
+    registers.intr_off();
 
     // send syscalls, interrupts, and exceptions to uservec in trampoline.S
     const trampoline_uservec = memlayout.TRAMPOLINE + (uservecAddr - trampolineAddr);
-    riscv.w_stvec(trampoline_uservec);
+    registers.w_stvec(trampoline_uservec);
 
     // set up trapframe values that uservec will need when
     // the process next traps into the kernel.
     const trapframe: *c.struct_trapframe = process.trapframe;
-    trapframe.kernel_satp = riscv.r_satp(); // kernel page table
-    trapframe.kernel_sp = process.kstack + riscv.PGSIZE; // process's kernel stack
+    trapframe.kernel_satp = registers.r_satp(); // kernel page table
+    trapframe.kernel_sp = process.kstack + riscv.pagesize; // process's kernel stack
     trapframe.kernel_trap = @intFromPtr(&usertrap);
     trapframe.kernel_hartid = riscv.r_tp(); // hartid for cpuid()
 
@@ -122,16 +123,16 @@ export fn usertrapret() void {
     // to get to user space.
 
     // set S Previous Privilege mode to User.
-    var sstatus = riscv.r_sstatus();
-    sstatus = riscv.SSTATUS.disable(.SPP, sstatus); // clear SPP to 0 for user mode
-    sstatus = riscv.SSTATUS.enable(.SPIE, sstatus); // enable interrupts in user mode
-    riscv.w_sstatus(sstatus);
+    var sstatus = registers.r_sstatus();
+    sstatus = registers.SSTATUS.disable(.SPP, sstatus); // clear SPP to 0 for user mode
+    sstatus = registers.SSTATUS.enable(.SPIE, sstatus); // enable interrupts in user mode
+    registers.w_sstatus(sstatus);
 
     // set S Exception Program Counter to the saved user pc.
-    riscv.w_sepc(trapframe.epc);
+    registers.w_sepc(trapframe.epc);
 
     // tell trampoline.S the user page table to switch to.
-    const satp = riscv.MAKE_SATP(process.pagetable);
+    const satp = registers.MAKE_SATP(process.pagetable);
 
     // jump to userret in trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
@@ -143,14 +144,14 @@ export fn usertrapret() void {
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
 export fn kerneltrap() void {
-    const sepc = riscv.r_sepc();
-    const sstatus = riscv.r_sstatus();
-    const scause = riscv.readScause();
+    const sepc = registers.r_sepc();
+    const sstatus = registers.r_sstatus();
+    const scause = registers.readScause();
 
-    if (!riscv.SSTATUS.isEnabled(.SPP, sstatus)) {
+    if (!registers.SSTATUS.isEnabled(.SPP, sstatus)) {
         @panic("kerneltrap: not from supervisor mode");
     }
-    if (riscv.intr_get()) {
+    if (registers.intr_get()) {
         @panic("kerneltrap: interrupts enabled");
     }
 
@@ -158,7 +159,7 @@ export fn kerneltrap() void {
         handleDeviceInterrupt(scause);
     } else {
         print("scause {x}\n", .{scause.raw()});
-        print("sepc={x} stval={x}\n", .{ sepc, riscv.r_stval() });
+        print("sepc={x} stval={x}\n", .{ sepc, registers.r_stval() });
         @panic("kerneltrap");
     }
 
@@ -169,8 +170,8 @@ export fn kerneltrap() void {
 
     // the yield() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
-    riscv.w_sepc(sepc);
-    riscv.w_sstatus(sstatus);
+    registers.w_sepc(sepc);
+    registers.w_sstatus(sstatus);
 }
 
 fn clockintr() void {
@@ -185,7 +186,7 @@ fn clockintr() void {
 // returns 2 if timer interrupt,
 // 1 if other device,
 // 0 if not recognized.
-fn handleDeviceInterrupt(scause: riscv.Scause) void {
+fn handleDeviceInterrupt(scause: registers.Scause) void {
     switch (scause) {
         .supervisorExternalInterrupt => {
             // this is a supervisor external interrupt, via PLIC.
@@ -214,7 +215,7 @@ fn handleDeviceInterrupt(scause: riscv.Scause) void {
             }
             // acknowledge the software interrupt by clearing
             // the SSIP bit in sip.
-            riscv.w_sip(riscv.SIP.disable(.SSIP, riscv.r_sip()));
+            registers.w_sip(registers.SIP.disable(.SSIP, registers.r_sip()));
         },
         else => return,
     }

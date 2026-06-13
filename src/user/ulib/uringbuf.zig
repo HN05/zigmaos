@@ -1,6 +1,6 @@
 const std = @import("std");
 const com = @import("common");
-const riscv = com.riscv;
+const pagesize = com.riscv.pagesize;
 const RB = com.ringbuf;
 const Book = com.ringbuf.Book;
 const sys = @import("./user.zig");
@@ -14,7 +14,7 @@ var uringbufs = [_]UserRingBuf{.{
 
 pub const UserRingBuf = extern struct {
     buf: RB.MagicBuf,
-    book: *align(riscv.PGSIZE) Book,
+    book: *align(pagesize) Book,
     name: [*:0]const u8,
     is_active: c_int,
 
@@ -23,7 +23,7 @@ pub const UserRingBuf = extern struct {
         var buf_p: ?*anyopaque = null;
         try sys.ringbuf(name, .open, &buf_p);
         const buf_u: usize = @intFromPtr(buf_p);
-        const book_u = buf_u - riscv.PGSIZE;
+        const book_u = buf_u - pagesize;
         self.* = .{
             .buf = @ptrFromInt(buf_u),
             .book = @ptrFromInt(book_u),
