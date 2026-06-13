@@ -21,4 +21,4 @@ zig-out/
 .zig-cache/
 zig-cache
 zig
-zig-lib
+lib
