@@ -41,3 +41,10 @@ pub inline fn PX(level: usize, va: usize) usize {
     return (va >> @as(u6, @intCast(PXSHIFT(level)))) & PXMASK;
 }
 
+// use riscv's sv39 page table scheme.
+pub const SATP_SV39 = @as(usize, 8) << 60;
+
+pub fn MAKE_SATP(pagetable: PageTable) usize {
+    return SATP_SV39 | (@intFromPtr(pagetable) >> 12);
+}
+

@@ -1,6 +1,7 @@
 const std = @import("std");
 const SpinLock = @import("spinlock.zig").SpinLock;
 const registers = @import("registers.zig");
+const pagetable = @import("pagetable.zig");
 const riscv = @import("common").riscv;
 const memlayout = @import("memlayout.zig");
 const uart = @import("uart.zig");
@@ -32,7 +33,7 @@ pub fn init() void {
 }
 
 pub fn initHart() void {
-    registers.w_stvec(@intFromPtr(&kernelvec));
+    registers.Stvec.write(@intFromPtr(&kernelvec));
 }
 
 //
@@ -46,15 +47,15 @@ export fn usertrap() void {
 
     // send interrupts and exceptions to kerneltrap(),
     // since we're now in the kernel.
-    registers.w_stvec(@intFromPtr(&kernelvec));
+    registers.Stvec.write(@intFromPtr(&kernelvec));
 
     const process: *c.struct_proc = c.myproc();
     const epc = &process.trapframe[0].epc;
 
     // save user program counter.
-    epc.* = @intCast(registers.r_sepc());
+    epc.* = @intCast(registers.Sepc.read());
 
-    const scause = registers.readScause();
+    const scause = registers.Scause.read();
     switch (scause.kind()) {
         .syscall => {
             if (c.killed(process) != 0) {
@@ -76,7 +77,7 @@ export fn usertrap() void {
         },
         .exception => {
             print("usertrap(): unexpected scause {x} pid={d}\n", .{ scause.raw(), process.pid });
-            print("            sepc={x} stval={x}\n", .{ registers.r_sepc(), registers.r_stval() });
+            print("            sepc={x} stval={x}\n", .{ registers.Sepc.read(), registers.Stval.read() });
             c.setkilled(process);
         },
     }
@@ -109,12 +110,12 @@ export fn usertrapret() void {
 
     // send syscalls, interrupts, and exceptions to uservec in trampoline.S
     const trampoline_uservec = memlayout.TRAMPOLINE + (uservecAddr - trampolineAddr);
-    registers.w_stvec(trampoline_uservec);
+    registers.Stvec.write(trampoline_uservec);
 
     // set up trapframe values that uservec will need when
     // the process next traps into the kernel.
     const trapframe: *c.struct_trapframe = process.trapframe;
-    trapframe.kernel_satp = registers.r_satp(); // kernel page table
+    trapframe.kernel_satp = registers.Satp.read(); // kernel page table
     trapframe.kernel_sp = process.kstack + riscv.pagesize; // process's kernel stack
     trapframe.kernel_trap = @intFromPtr(&usertrap);
     trapframe.kernel_hartid = riscv.r_tp(); // hartid for cpuid()
@@ -127,10 +128,10 @@ export fn usertrapret() void {
     registers.Sstatus.set(.SPIE); // enable interrupts in user mode
 
     // set S Exception Program Counter to the saved user pc.
-    registers.w_sepc(trapframe.epc);
+    registers.Sepc.write(trapframe.epc);
 
     // tell trampoline.S the user page table to switch to.
-    const satp = registers.MAKE_SATP(process.pagetable);
+    const satp = pagetable.MAKE_SATP(process.pagetable);
 
     // jump to userret in trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
@@ -142,9 +143,9 @@ export fn usertrapret() void {
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
 export fn kerneltrap() void {
-    const sepc = registers.r_sepc();
+    const sepc = registers.Sepc.read();
     const sstatus = registers.Sstatus.read();
-    const scause = registers.readScause();
+    const scause = registers.Scause.read();
 
     if (!registers.Sstatus.isSet(.SPP)) {
         @panic("kerneltrap: not from supervisor mode");
@@ -168,7 +169,7 @@ export fn kerneltrap() void {
 
     // the yield() may have caused some traps to occur,
     // so restore trap registers for use by kernelvec.S's sepc instruction.
-    registers.w_sepc(sepc);
+    registers.Sepc.write(sepc);
     registers.Sstatus.write(sstatus);
 }
 
@@ -213,7 +214,7 @@ fn handleDeviceInterrupt(scause: registers.Scause) void {
             }
             // acknowledge the software interrupt by clearing
             // the SSIP bit in sip.
-            registers.w_sip(registers.SIP.disable(.SSIP, registers.r_sip()));
+            registers.Sip.clear(.SSIP);
         },
         else => return,
     }
