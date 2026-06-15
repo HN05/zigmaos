@@ -10,7 +10,7 @@
 //
 
 const std = @import("std");
-const SpinLock = @import("spinlock.zig").SpinLock;
+const CSpinlock = @import("spinlock.zig").CSpinlock;
 const uart = @import("uart.zig");
 
 const c = @cImport({
@@ -36,7 +36,7 @@ fn control(char: u8) u8 {
 
 const input_buf_size = 128;
 const Console = struct {
-    lock: SpinLock = undefined,
+    lock: CSpinlock = undefined,
 
     buffer: [input_buf_size]u8 = undefined,
 
@@ -98,8 +98,8 @@ fn consoleRead(userDestination: c_int, start: c.uint64, n: c_int) callconv(.c) c
     var destination = start;
     var charsLeft = n;
 
-    console.lock.acquire();
-    defer console.lock.release();
+    console.lock.acquireLock();
+    defer console.lock.releaseLock();
 
     while (charsLeft > 0) {
         // wait until interrupt handler has put some
@@ -151,8 +151,8 @@ fn consoleRead(userDestination: c_int, start: c.uint64, n: c_int) callconv(.c) c
 //
 
 pub fn consoleInterrupt(character: u8) void {
-    console.lock.acquire();
-    defer console.lock.release();
+    console.lock.acquireLock();
+    defer console.lock.releaseLock();
 
     switch (character) {
         control('P') => { // print process list

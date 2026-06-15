@@ -1,5 +1,5 @@
 const std = @import("std");
-const SpinLock = @import("spinlock.zig").SpinLock;
+const CSpinlock = @import("spinlock.zig").CSpinlock;
 const memlayout = @import("../kernel/memlayout.zig");
 const pagesize = @import("common").riscv.pagesize;
 const assert = std.debug.assert;
@@ -12,7 +12,7 @@ const Block = extern struct {
     next: ?*Block,
 };
 
-var lock: SpinLock = undefined;
+var lock: CSpinlock = undefined;
 var freelist: ?*Block = null;
 
 pub export fn kinit() void {
@@ -58,8 +58,8 @@ pub fn freePage(pa: PagePtr) !void {
     // // Fill with junk to catch dangling refs.
     @memset(pa[0..pagesize], 1);
     const b: *Block = @alignCast(@ptrCast(pa));
-    lock.acquire();
-    defer lock.release();
+    lock.acquireLock();
+    defer lock.releaseLock();
     b.next = freelist;
     freelist = b;
 }
@@ -67,8 +67,8 @@ pub fn freePage(pa: PagePtr) !void {
 pub const PagePtr = *align(pagesize) [pagesize]u8;
 
 pub fn allocPage() ?PagePtr {
-    lock.acquire();
-    defer lock.release();
+    lock.acquireLock();
+    defer lock.releaseLock();
     const r_o = freelist;
     if (r_o) |r| {
         freelist = r.next;

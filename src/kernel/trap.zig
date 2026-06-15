@@ -1,5 +1,5 @@
 const std = @import("std");
-const SpinLock = @import("spinlock.zig").SpinLock;
+const CSpinlock = @import("spinlock.zig").CSpinlock;
 const csr = @import("csr.zig");
 const pagetable = @import("pagetable.zig");
 const riscv = @import("common").riscv;
@@ -20,7 +20,7 @@ const c = @cImport({
 
 export var ticks: c.uint = 0;
 
-export var tickslock: SpinLock = undefined;
+export var tickslock: CSpinlock = undefined;
 
 extern const trampoline: anyopaque;
 extern const uservec: anyopaque;
@@ -176,10 +176,10 @@ export fn kerneltrap() void {
 }
 
 fn clockintr() void {
-    tickslock.acquire();
+    tickslock.acquireLock();
     ticks += 1;
     c.wakeup(&ticks);
-    tickslock.release();
+    tickslock.releaseLock();
 }
 
 // check if it's an external interrupt or software interrupt,

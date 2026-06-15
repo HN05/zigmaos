@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const UserRegister = enum(usize) {
+pub const UserRegister = enum(u5) {
     zero = 0, // x0, hardwired zero
     ra = 1, // x1
     sp = 2, // x2

@@ -1,4 +1,8 @@
 // Much of this code comes from https://github.com/binarycraft007/xv6-riscv-zig
+comptime {
+    _ = @import("sleeplock.zig");
+    _ = @import("spinlock.zig");
+}
 
 const std = @import("std");
 const csr = @import("csr.zig");
