@@ -118,7 +118,7 @@ export fn usertrapret() void {
     trapframe.kernel_satp = csr.Satp.read(); // kernel page table
     trapframe.kernel_sp = process.kstack + riscv.pagesize; // process's kernel stack
     trapframe.kernel_trap = @intFromPtr(&usertrap);
-    trapframe.kernel_hartid = riscv.registers.UserRegister.tp.read(); // hartid for cpuid()
+    trapframe.kernel_hartid = riscv.registers.read(.tp); // hartid for cpuid()
 
     // set up the registers that trampoline.S's sret will use
     // to get to user space.

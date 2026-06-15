@@ -57,7 +57,7 @@ pub export fn start() void {
 
     // keep each CPU's hartid in its tp register, for cpuid().
     const id = csr.Mhartid.read();
-    registers.UserRegister.tp.write(id);
+    registers.write(.tp, id);
 
     asm volatile ("mret");
 }
