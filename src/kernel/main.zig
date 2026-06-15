@@ -8,7 +8,6 @@ const c = @cImport({
 const std = @import("std");
 const log_root = @import("klog.zig");
 const riscv = @import("common").riscv;
-const Atomic = std.atomic.Atomic;
 const Kalloc = @import("kalloc.zig");
 const plic = @import("plic.zig");
 const console = @import("console.zig");

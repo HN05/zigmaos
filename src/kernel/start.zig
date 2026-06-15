@@ -2,6 +2,7 @@
 comptime {
     _ = @import("sleeplock.zig");
     _ = @import("ringbuf.zig");
+    _ = @import("syscall.zig");
 }
 
 const std = @import("std");

@@ -21,3 +21,4 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_ringbuf 22 
+#define MAX_SYSCALL 40 // must be higher than max syscall

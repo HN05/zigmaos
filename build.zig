@@ -16,7 +16,6 @@ const kernel_src = [_][]const u8{
     "src/kernel/proc.c", // Processes and scheduling.
     "src/kernel/swtch.S", // Thread switching.
     "src/kernel/trampoline.S", // Assembly code to switch between user and kernel.
-    "src/kernel/syscall.c", // Dispatch system calls to handling function.
     "src/kernel/sysproc.c", // Process-related system calls.
     "src/kernel/bio.c", // Disk block cache for the file system.
     "src/kernel/fs.c", // File system.
