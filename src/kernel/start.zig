@@ -33,17 +33,24 @@ pub export fn start() void {
     csr.Satp.write(0);
 
     // delegate all interrupts and exceptions to supervisor mode.
-    csr.Medeleg.write(@as(usize, 0xffff));
-    csr.Mideleg.write(@as(usize, 0xffff));
+    csr.Medeleg.setAllFlags();
+    csr.Mideleg.setAllFlags();
 
-    csr.Sie.set(.SEIE);
-    csr.Sie.set(.SSIE);
-    csr.Sie.set(.STIE);
+    csr.Sie.update()
+        .set(.SEIE)
+        .set(.SSIE)
+        .set(.STIE)
+        .commit();
 
     // configure Physical Memory Protection to give supervisor mode
     // access to all of physical memory.
-    csr.Pmpaddr0.write(@as(usize, 0x3fffffffffffff));
-    csr.Pmpcfg0.write(@as(usize, 0xf));
+    csr.Pmpaddr0.allowAllPhysicalMemory();
+    csr.Pmpcfg0.update()
+        .set(.read)
+        .set(.write)
+        .set(.execute)
+        .set(.NAPOT)
+        .commit();
 
     // ask for clock interrupts.
     timerinit();

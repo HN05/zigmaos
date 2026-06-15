@@ -124,8 +124,10 @@ export fn usertrapret() void {
     // to get to user space.
 
     // set S Previous Privilege mode to User.
-    csr.Sstatus.clear(.SPP); // clear SPP to 0 for user mode
-    csr.Sstatus.set(.SPIE); // enable interrupts in user mode
+    csr.Sstatus.update()
+        .clear(.SPP) // clear SPP to 0 for user mode
+        .set(.SPIE) // enable interrupts in user mode
+        .commit();
 
     // set S Exception Program Counter to the saved user pc.
     csr.Sepc.write(trapframe.epc);

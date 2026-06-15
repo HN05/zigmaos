@@ -3,8 +3,16 @@ const registers = @import("common").riscv.registers;
 
 pub fn FlagOps(comptime Flag: type) type {
     return struct {
-        pub fn mask(flag: Flag) usize {
+        fn mask(flag: Flag) usize {
             return @intFromEnum(flag);
+        }
+
+        pub fn allFlagsMask() usize {
+            var result: usize = 0;
+            inline for (std.enums.values(Flag)) |flag| {
+                result |= mask(flag);
+            }
+            return result;
         }
 
         pub fn set(flag: Flag, value: usize) usize {
@@ -23,8 +31,36 @@ pub fn FlagOps(comptime Flag: type) type {
 
 pub fn CsrWithFlags(comptime name: []const u8, comptime Flag: type) type {
     return struct {
+        const Self = @This();
         pub const registerName = name;
         pub const flags = FlagOps(Flag);
+        pub const Update = struct {
+            value: usize,
+
+            pub fn set(self: Update, flag: Flag) Update {
+                return .{ .value = flags.set(flag, self.value) };
+            }
+
+            pub fn clear(self: Update, flag: Flag) Update {
+                return .{ .value = flags.clear(flag, self.value) };
+            }
+
+            pub fn setAll(self: Update) Update {
+                return .{ .value = self.value | flags.allFlagsMask() };
+            }
+
+            pub fn clearAll(self: Update) Update {
+                return .{ .value = self.value & ~flags.allFlagsMask() };
+            }
+
+            pub fn commit(self: Update) void {
+                Self.write(self.value);
+            }
+
+            pub fn valueOf(self: Update) usize {
+                return self.value;
+            }
+        };
 
         pub inline fn read() usize {
             return asm volatile ("csrr a0, " ++ name
@@ -39,16 +75,28 @@ pub fn CsrWithFlags(comptime name: []const u8, comptime Flag: type) type {
             );
         }
 
-        pub fn set(bit: Flag) void {
-            write(flags.set(bit, read()));
+        pub fn update() Update {
+            return .{ .value = read() };
         }
 
-        pub fn clear(bit: Flag) void {
-            write(flags.clear(bit, read()));
+        pub fn set(flag: Flag) void {
+            update().set(flag).commit();
         }
 
-        pub fn isSet(bit: Flag) bool {
-            return flags.isSet(bit, read());
+        pub fn clear(flag: Flag) void {
+            update().clear(flag).commit();
+        }
+
+        pub fn setAllFlags() void {
+            update().setAll().commit();
+        }
+
+        pub fn clearAllFlags() void {
+            update().clearAll().commit();
+        }
+
+        pub fn isSet(flag: Flag) bool {
+            return flags.isSet(flag, read());
         }
     };
 }
@@ -82,134 +130,9 @@ pub fn CsrReadOnly(comptime name: []const u8) type {
     };
 }
 
-pub const Mhartid = CsrReadOnly("mhartid");
-
-pub const Mepc = Csr("mepc");
-
-pub const MstatusFlags = enum(usize) {
-    Machine_interrupts_enable = 1 << 3,
-};
-
-pub const BaseMstatus = CsrWithFlags("mstatus", MstatusFlags);
-
-pub const Mstatus = struct {
-    pub const flags = BaseMstatus.flags;
-    pub const Machine_prev_mask: usize = 3 << 11;
-    pub const Mpp = enum(usize) {
-        Machine = 3 << 11,
-        Supervisor = 1 << 11,
-        User = 0 << 11,
-    };
-
-    pub fn read() usize {
-        return BaseMstatus.read();
-    }
-
-    pub fn write(value: usize) void {
-        BaseMstatus.write(value);
-    }
-
-    pub fn set(flag: MstatusFlags) void {
-        BaseMstatus.set(flag);
-    }
-
-    pub fn clear(flag: MstatusFlags) void {
-        BaseMstatus.clear(flag);
-    }
-
-    pub fn isSet(flag: MstatusFlags) bool {
-        return BaseMstatus.isSet(flag);
-    }
-
-    pub fn setMpp(mode: Mpp) void {
-        const value = (read() & ~Machine_prev_mask) | @intFromEnum(mode);
-        write(value);
-    }
-};
-
-pub const SstatusFlags = enum(usize) {
-    SPP = 1 << 8, // Previous mode, 1=Supervisor, 0=User
-    SPIE = 1 << 5, // Supervisor Previous Interrupt Enable
-    UPIE = 1 << 4, // User Previous Interrupt Enable
-    SIE = 1 << 1, // Supervisor Interrupt Enable
-    UIE = 1 << 0, // User Interrupt Enable
-};
-
-pub const Sstatus = CsrWithFlags("sstatus", SstatusFlags);
-
-// enable device interrupts
-pub fn interrupts_on() void {
-    Sstatus.set(.SIE);
-}
-
-// disable device interrupts
-pub fn interrupts_off() void {
-    Sstatus.clear(.SIE);
-}
-
-// are device interrupts enabled?
-pub fn interrupts_is_on() bool {
-    return Sstatus.isSet(.SIE);
-}
-
-pub const SipFlags = enum(usize) {
-    SSIP = 1 << 1, // supervisor software interrupt pending
-    STIP = 1 << 5, // supervisor timer interrupt pending
-    SEIP = 1 << 9, // supervisor external interrupt pending
-};
-
-pub const Sip = CsrWithFlags("sip", SipFlags);
-
-// Supervisor Interrupt Enable
-pub const SieFlags = enum(usize) {
-    SEIE = 1 << 9, // external
-    STIE = 1 << 5, // timer
-    SSIE = 1 << 1, // software
-};
-
-pub const Sie = CsrWithFlags("sie", SieFlags);
-
-// Machine-mode Interrupt Enable
-pub const MieFlags = enum(usize) {
-    MEIE = 1 << 11, // external
-    MTIE = 1 << 7, // timer
-    MSIE = 1 << 3, // software
-};
-
-pub const Mie = CsrWithFlags("mie", MieFlags);
-
-// supervisor exception program counter, holds the
-// instruction address to which a return from
-// exception will go.
-pub const Sepc = Csr("sepc");
-
-// Machine Exception Delegation
-pub const Medeleg = Csr("medeleg");
-
-// Machine Interrupt Delegation
-pub const Mideleg = Csr("mideleg");
-
-// Supervisor Trap-Vector Base Address
-// low two bits are mode.
-pub const Stvec = Csr("stvec");
-
-// Machine-mode interrupt vector
-pub const Mtvec = Csr("mtvec");
-
-// Physical Memory Protection
-pub const Pmpcfg0 = Csr("pmpcfg0");
-
-pub const Pmpaddr0 = Csr("pmpaddr0");
-
-// supervisor address translation and protection;
-// holds the address of the page table.
-pub const Satp = Csr("satp");
-
-pub const Mscratch = Csr("mscratch");
-
 // Supervisor Trap Cause
 pub const Scause = enum(usize) {
-    const TrapKind = enum {
+    pub const TrapKind = enum {
         syscall,
         interrupt,
         exception,
@@ -312,11 +235,180 @@ pub const Scause = enum(usize) {
     }
 };
 
-// Supervisor Trap Value
-pub const Stval = CsrReadOnly("stval");
+pub const MstatusFlags = enum(usize) {
+    Machine_interrupts_enable = 1 << 3,
+};
+
+pub const BaseMstatus = CsrWithFlags("mstatus", MstatusFlags);
+
+pub const Mstatus = struct {
+    pub const flags = BaseMstatus.flags;
+    pub const Machine_prev_mask: usize = 3 << 11;
+    pub const Mpp = enum(usize) {
+        Machine = 3 << 11,
+        Supervisor = 1 << 11,
+        User = 0 << 11,
+    };
+
+    pub fn read() usize {
+        return BaseMstatus.read();
+    }
+
+    pub fn write(value: usize) void {
+        BaseMstatus.write(value);
+    }
+
+    pub fn set(flag: MstatusFlags) void {
+        BaseMstatus.set(flag);
+    }
+
+    pub fn clear(flag: MstatusFlags) void {
+        BaseMstatus.clear(flag);
+    }
+
+    pub fn isSet(flag: MstatusFlags) bool {
+        return BaseMstatus.isSet(flag);
+    }
+
+    pub fn setMpp(mode: Mpp) void {
+        const value = (read() & ~Machine_prev_mask) | @intFromEnum(mode);
+        write(value);
+    }
+};
+
+pub const SstatusFlags = enum(usize) {
+    SPP = 1 << 8, // Previous mode, 1=Supervisor, 0=User
+    SPIE = 1 << 5, // Supervisor Previous Interrupt Enable
+    UPIE = 1 << 4, // User Previous Interrupt Enable
+    SIE = 1 << 1, // Supervisor Interrupt Enable
+    UIE = 1 << 0, // User Interrupt Enable
+};
+
+pub const Sstatus = CsrWithFlags("sstatus", SstatusFlags);
+
+// enable device interrupts
+pub fn interrupts_on() void {
+    Sstatus.set(.SIE);
+}
+
+// disable device interrupts
+pub fn interrupts_off() void {
+    Sstatus.clear(.SIE);
+}
+
+// are device interrupts enabled?
+pub fn interrupts_is_on() bool {
+    return Sstatus.isSet(.SIE);
+}
+
+pub const SipFlags = enum(usize) {
+    SSIP = 1 << 1, // supervisor software interrupt pending
+    STIP = 1 << 5, // supervisor timer interrupt pending
+    SEIP = 1 << 9, // supervisor external interrupt pending
+};
+
+pub const Sip = CsrWithFlags("sip", SipFlags);
+
+// Supervisor Interrupt Enable
+pub const SieFlags = enum(usize) {
+    SEIE = 1 << 9, // external
+    STIE = 1 << 5, // timer
+    SSIE = 1 << 1, // software
+};
+
+pub const Sie = CsrWithFlags("sie", SieFlags);
+
+// Machine-mode Interrupt Enable
+pub const MieFlags = enum(usize) {
+    MEIE = 1 << 11, // external
+    MTIE = 1 << 7, // timer
+    MSIE = 1 << 3, // software
+};
+
+pub const Mie = CsrWithFlags("mie", MieFlags);
+
+// Machine Exception Delegation
+pub const MedelegFlags = enum(usize) {
+    instructionAddressMisaligned = 1 << 0,
+    instructionAccessFault = 1 << 1,
+    illegalInstruction = 1 << 2,
+    breakpoint = 1 << 3,
+    loadAddressMisaligned = 1 << 4,
+    loadAccessFault = 1 << 5,
+    storeAddressMisaligned = 1 << 6,
+    storeAccessFault = 1 << 7,
+    environmentCallFromUMode = 1 << 8,
+    environmentCallFromSMode = 1 << 9,
+    environmentCallFromMMode = 1 << 11,
+    instructionPageFault = 1 << 12,
+    loadPageFault = 1 << 13,
+    storePageFault = 1 << 15,
+};
+pub const Medeleg = CsrWithFlags("medeleg", MedelegFlags);
+
+// Machine Interrupt Delegation
+pub const MidelegFlags = enum(usize) {
+    supervisorSoftwareInterrupt = 1 << 1,
+    supervisorTimerInterrupt = 1 << 5,
+    supervisorExternalInterrupt = 1 << 9,
+};
+pub const Mideleg = CsrWithFlags("mideleg", MidelegFlags);
+
+// supervisor exception program counter, holds the
+// instruction address to which a return from
+// exception will go.
+pub const Sepc = Csr("sepc");
+
+pub const Mepc = Csr("mepc");
+
+// Supervisor Trap-Vector Base Address
+// low two bits are mode.
+pub const Stvec = Csr("stvec");
+
+// Machine-mode interrupt vector
+pub const Mtvec = Csr("mtvec");
+
+// Physical Memory Protection
+pub const PmpcfgFlags = enum(usize) {
+    read = 1 << 0,       // read
+    write = 1 << 1,       // write
+    execute = 1 << 2,       // execute
+    NAPOT = 3 << 3,   // naturally aligned power-of-two region
+    lock = 1 << 7,       // lock
+};
+pub const Pmpcfg0 = CsrWithFlags("pmpcfg0", PmpcfgFlags);
+
+pub const Pmpaddr0 = struct {
+    const base = Csr("pmpaddr0");
+
+    pub const allPhysicalMemory: usize = 0x3fffffffffffff;
+
+    pub fn write(value: usize) void {
+        base.write(value);
+    }
+
+    pub fn read() usize {
+        return base.read();
+    }
+
+    pub fn allowAllPhysicalMemory() void {
+        write(allPhysicalMemory);
+    }
+};
+
+// supervisor address translation and protection;
+// holds the address of the page table.
+pub const Satp = Csr("satp");
+
+pub const Mscratch = Csr("mscratch");
 
 // Machine-mode Counter-Enable
 pub const Mcounteren = Csr("mcounteren");
 
+// Supervisor Trap Value
+pub const Stval = CsrReadOnly("stval");
+
 // machine-mode cycle counter
 pub const Time = CsrReadOnly("time");
+
+pub const Mhartid = CsrReadOnly("mhartid");
