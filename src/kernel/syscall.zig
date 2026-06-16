@@ -66,31 +66,3 @@ export fn syscall() void {
 
     process.*.trapframe.*.a0 = @intCast(result);
 }
-
-
-//  TODO: remove
-// Fetch the uint64 at addr from the current process.
-export fn fetchaddr(address: c.uint64, ip: *c.uint64) c_int {
-    const process = c.myproc();
-
-    if (address >= process.*.sz or address + @sizeOf(c.uint64) > process.*.sz) {
-        return -1;
-    }
-
-    const result = c.copyin(process.*.pagetable, @ptrCast(ip), address, @sizeOf(c.uint64));
-    if (result != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-// Fetch the nul-terminated string at addr from the current process.
-// Returns length of string, not including nul, or -1 for error.
-export fn fetchstr(address: c.uint64, buffer: [*c]u8, max: c_int) c_int {
-    const process = c.myproc();
-    const result = c.copyinstr(process.*.pagetable, buffer, address, @intCast(max));
-    if (result < 0) {
-        return -1;
-    }
-    return c.strlen(buffer);
-}
