@@ -110,20 +110,20 @@ const c_spinlock = extern struct {
     cpu: ?*c.struct_cpu = null,
 };
 
-const CSpinlock = extern struct {
+pub const CSpinlock = extern struct {
     const Self = @This();
     lock: c_spinlock,
 
-    fn init(self: *Self, name: ?[*:0]const u8) void {
+    pub fn init(self: *Self, name: ?[*:0]const u8) void {
         initlock(@ptrCast(&self.lock), @ptrCast(@constCast(name)));
     }
-    fn acquireLock(self: *CSpinlock) void {
+    pub fn acquireLock(self: *CSpinlock) void {
         acquire(@ptrCast(&self.lock));
     }
-    fn releaseLock(self: *CSpinlock) void {
+    pub fn releaseLock(self: *CSpinlock) void {
         release(@ptrCast(&self.lock));
     }
-    fn isHoldingLock(self: *CSpinlock) bool {
+    pub fn isHoldingLock(self: *CSpinlock) bool {
         return holding(@ptrCast(&self.lock)) == 1;
     }
 };
