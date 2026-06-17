@@ -127,8 +127,6 @@ int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
 
 // syscall.c
-int             fetchstr(uint64, char*, int);
-int             fetchaddr(uint64, uint64*);
 void            syscall();
 
 // trap.c

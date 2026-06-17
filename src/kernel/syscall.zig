@@ -16,10 +16,7 @@ const c = @cImport({
 });
 
 // Prototypes for the functions that handle system calls.
-extern fn sys_chdir() u64;
-extern fn sys_mknod() u64;
 extern fn sys_pipe() u64;
-extern fn sys_exec() u64;
 
 export fn syscall() void {
     const process = c.myproc();
@@ -31,9 +28,9 @@ export fn syscall() void {
     const result: u64 = switch (syscallNum) {
         .exit => procsyscalls.sys_exit(),
         .close => filesyscalls.sys_close(),
-        .chdir => sys_chdir(),
+        .chdir => filesyscalls.sys_chdir(),
         .dup => filesyscalls.sys_dup(),
-        .exec => sys_exec(),
+        .exec => filesyscalls.sys_exec(),
         .fork => procsyscalls.sys_fork(),
         .fstat => filesyscalls.sys_fstat(),
         .getpid => procsyscalls.sys_getpid(),
@@ -42,9 +39,9 @@ export fn syscall() void {
         .kill => procsyscalls.sys_kill(),
         .link => filesyscalls.sys_link(),
         .mkdir => filesyscalls.sys_mkdir(),
-        .mknod => sys_mknod(),
+        .mknod => filesyscalls.sys_mknod(),
         .open => filesyscalls.sys_open(),
-        .pipe => sys_pipe(),
+        .pipe => filesyscalls.sys_pipe(),
         .read => filesyscalls.sys_read(),
         .sbrk => procsyscalls.sys_sbrk(),
         .sleep => procsyscalls.sys_sleep(),

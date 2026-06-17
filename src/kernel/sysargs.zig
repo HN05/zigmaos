@@ -55,10 +55,9 @@ const GetFileErrors = error{ OutOfRange, NotCreated };
 
 pub fn getFile(register: InputRegister) GetFileErrors!*c.struct_file {
     var file: *c.struct_file = undefined;
-    _ = try getFileAndDescriptor(register, &file); 
+    _ = try getFileAndDescriptor(register, &file);
     return file;
 }
-
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -97,19 +96,17 @@ pub fn fileDescriptorAllocate(file: *c.struct_file) FileDescriptorAllocateErrors
     return FileDescriptorAllocateErrors.OutOfSpace;
 }
 
-// Fetch the uint64 at addr from the current process.
-export fn fetchaddr(address: c.uint64, ip: *c.uint64) c_int {
+const FetchAddressErrors = error{ AddressOutOfBounds, FailedCopyInToKernel };
+// Fetch the pointer at addr from the current process.
+pub fn fetchAddr(address: *anyopaque, destination: *?*anyopaque) FetchAddressErrors!void {
     const process = c.myproc();
 
-    if (address >= process.*.sz or address + @sizeOf(c.uint64) > process.*.sz) {
-        return -1;
+    if (@intFromPtr(address) >= process.*.sz or @intFromPtr(address) + @sizeOf(*anyopaque) > process.*.sz) {
+        return FetchAddressErrors.AddressOutOfBounds;
     }
 
-    const result = c.copyin(process.*.pagetable, @ptrCast(ip), address, @sizeOf(c.uint64));
-    if (result != 0) {
-        return -1;
-    }
-    return 0;
+    const result = c.copyin(process.*.pagetable, @ptrCast(destination), @intFromPtr(address), @sizeOf(*anyopaque));
+    if (result != 0) return FetchAddressErrors.FailedCopyInToKernel;
 }
 
 const FetchStringError = error{failed};
