@@ -157,11 +157,11 @@ pub fn link() LinkErrors!void {
 
 fn isDirectoryEmpty(directory: *c.struct_inode) bool {
     const directoryOffset = @sizeOf(c.struct_dirent);
-    var index = 2; // skip past . and ..
+    var index: usize = 2; // skip past . and ..
     var directoryEntitiy: c.struct_dirent = undefined;
 
     while (index * directoryOffset < directory.*.size) : (index += 1) {
-        const readBytes = c.readi(directory, 0, &directoryEntitiy, index * directoryOffset, directoryOffset);
+        const readBytes = c.readi(directory, 0, @intFromPtr(&directoryEntitiy), @intCast(index * directoryOffset), directoryOffset);
         if (readBytes != directoryOffset) {
             @panic("isDirectoryEmpty: readi");
         }
@@ -200,8 +200,8 @@ pub fn unlink() UnlinkErrors!void {
     if (c.namecmp(&name, ".") == 0) return UnlinkErrors.IsDot;
     if (c.namecmp(&name, "..") == 0) return UnlinkErrors.IsDotDot;
 
-    var offset: usize = undefined;
-    const inode = c.dirlookup(directory, name, &offset) orelse return UnlinkErrors.FailedDirLookup;
+    var offset: c.uint = undefined;
+    const inode = c.dirlookup(directory, &name, &offset) orelse return UnlinkErrors.FailedDirLookup;
 
     c.ilock(inode);
     defer c.iunlockput(inode);
@@ -246,14 +246,14 @@ pub const DeviceID = MakeDeviceID(params.NDEV);
 
 const CreateErrors = error{ FailedGetParentDir, PathExistsWithWrongType, FailedAllocateInode, FailedCreateDot, FailedCreateDotDot, FailedLinkParentDir };
 
-fn create(path: []u8, kind: InodeKind, device: DeviceID) CreateErrors!c.struct_inode {
+fn create(path: []u8, kind: InodeKind, device: DeviceID) CreateErrors!*c.struct_inode {
     var name: [c.DIRSIZ]u8 = undefined;
-    const directory = c.nameiparent(path, &name) orelse return CreateErrors.FailedGetParentDir;
+    const directory = c.nameiparent(path.ptr, &name) orelse return CreateErrors.FailedGetParentDir;
 
     c.ilock(directory);
     defer c.iunlockput(directory);
 
-    if (c.dirlookup(directory, name, 0)) |inode| {
+    if (c.dirlookup(directory, &name, 0)) |inode| {
         c.ilock(inode);
         errdefer c.iunlockput(inode);
 
@@ -265,7 +265,7 @@ fn create(path: []u8, kind: InodeKind, device: DeviceID) CreateErrors!c.struct_i
         return CreateErrors.PathExistsWithWrongType;
     }
 
-    const inode = c.ialloc(device.major, device.minor) orelse return CreateErrors.FailedAllocateInode;
+    const inode = c.ialloc(device.major, @intCast(device.minor)) orelse return CreateErrors.FailedAllocateInode;
 
     c.ilock(inode);
     errdefer {
@@ -275,17 +275,20 @@ fn create(path: []u8, kind: InodeKind, device: DeviceID) CreateErrors!c.struct_i
     }
 
     inode.*.major = device.major;
-    inode.*.minor = device.minor;
+    inode.*.minor = @intCast(device.minor);
     inode.*.nlink = 1;
     c.iupdate(inode);
 
     if (kind == .Directory) {
         // create . and .. entries
-        if (c.dirlink(inode, ".", inode.*.inum) < 0) return CreateErrors.FailedCreateDot;
-        if (c.dirlink(inode, "..", directory.*.inum) < 0) return CreateErrors.FailedCreateDotDot;
+        var dot = [_:0]u8{'.'};
+        var dotdot = [_:0]u8{ '.', '.' };
+
+        if (c.dirlink(inode, &dot, inode.*.inum) < 0) return CreateErrors.FailedCreateDot;
+        if (c.dirlink(inode, &dotdot, directory.*.inum) < 0) return CreateErrors.FailedCreateDotDot;
     }
 
-    if (c.dirlink(directory, name, inode.*.inum) < 0) return CreateErrors.FailedLinkParentDir;
+    if (c.dirlink(directory, &name, inode.*.inum) < 0) return CreateErrors.FailedLinkParentDir;
     if (kind == .Directory) {
         directory.*.nlink += 1; // for ".."
         c.iupdate(directory);
@@ -301,7 +304,6 @@ pub fn sys_open() u64 {
     };
     return fd;
 }
-
 
 const AccessMode = enum(u2) {
     read_only = 0,
@@ -339,39 +341,39 @@ pub const OpenMode = packed struct {
     }
 };
 
-const OpenErrors = error{FailedGetPath, InvalidPath, OpenDirWithoutOnlyRead, InvalidDeviceMajor, FailedAllocFile };
-pub fn open() OpenErrors!usize {
+const OpenErrors = error{ FailedGetPath, InvalidPath, OpenDirWithoutOnlyRead, InvalidDeviceMajor, FailedAllocFile };
+pub fn open() !usize {
     var path: [c.MAXPATH]u8 = undefined;
-    _ = sysargs.getString(.a0, &path) catch return OpenErrors.FailedGetPath;
+    const pathLen = sysargs.getString(.a0, &path) catch return OpenErrors.FailedGetPath;
 
     const openMode = try OpenMode.fromUsize(sysargs.getInt(.a1));
 
     c.begin_op();
     defer c.end_op();
 
-    const inode = if (openMode.create) try create(path, .File, .{ .major = 0, .minor = 0 }) else blk: {
-        const existingInode = c.namei(path) orelse return OpenErrors.InvalidPath;
+    const inode = if (openMode.create) try create(path[0..pathLen], .File, .{ .major = 0, .minor = 0 }) else blk: {
+        const existingInode = c.namei(&path) orelse return OpenErrors.InvalidPath;
 
         c.ilock(existingInode);
         errdefer c.iunlockput(existingInode);
 
-        if (existingInode.type == c.T_DIR and openMode.access != .read_only) return OpenErrors.OpenDirWithoutOnlyRead; 
+        if (existingInode.*.type == c.T_DIR and openMode.access != .read_only) return OpenErrors.OpenDirWithoutOnlyRead;
 
         break :blk existingInode;
     };
     errdefer c.iput(inode); // only iput on error
     defer c.iunlock(inode);
 
-    if (inode.type == c.T_DEVICE and (inode.major < 0 or inode.major >= params.NDEV)) return OpenErrors.InvalidDeviceMajor;
+    if (inode.*.type == c.T_DEVICE and (inode.*.major < 0 or inode.*.major >= params.NDEV)) return OpenErrors.InvalidDeviceMajor;
 
     const file = c.filealloc() orelse return OpenErrors.FailedAllocFile;
     defer c.fileclose(file);
 
     const fd = try sysargs.fileDescriptorAllocate(file);
 
-    if (inode.type == c.T_DEVICE) {
+    if (inode.*.type == c.T_DEVICE) {
         file.*.type = c.FD_DEVICE;
-        file.*.major = inode.major;
+        file.*.major = inode.*.major;
     } else {
         file.*.type = c.FD_INODE;
         file.*.off = 0;
@@ -380,48 +382,54 @@ pub fn open() OpenErrors!usize {
     file.*.writable = @intFromBool(openMode.access.isWritable());
     file.*.readable = @intFromBool(openMode.access.isReadable());
 
-    if (openMode == .trunc and inode.type == c.T_FILE) {
+    if (openMode.trunc and inode.*.type == c.T_FILE) {
         c.itrunc(inode);
     }
 
     return fd;
 }
-//
-// uint64
-// sys_mkdir(void)
-// {
-//   char path[MAXPATH];
-//   struct inode *ip;
-//
-//   begin_op();
-//   if(argstr(0, path, MAXPATH) < 0 || (ip = create(path, T_DIR, 0, 0)) == 0){
-//     end_op();
-//     return -1;
-//   }
-//   iunlockput(ip);
-//   end_op();
-//   return 0;
-// }
-//
-// uint64
-// sys_mknod(void)
-// {
-//   struct inode *ip;
-//   char path[MAXPATH];
-//   int major, minor;
-//
-//   begin_op();
-//   argint(1, &major);
-//   argint(2, &minor);
-//   if((argstr(0, path, MAXPATH)) < 0 ||
-//      (ip = create(path, T_DEVICE, major, minor)) == 0){
-//     end_op();
-//     return -1;
-//   }
-//   iunlockput(ip);
-//   end_op();
-//   return 0;
-// }
+
+pub fn sys_mkdir() u64 {
+    var path: [c.MAXPATH]u8 = undefined;
+    const pathLen = sysargs.getString(.a0, &path) catch |err| {
+        log.print("could not get path: {s}", .{@errorName(err)});
+        return sysargs.errorVal;
+    };
+
+    c.begin_op();
+    defer c.end_op();
+
+    const inode = create(path[0..pathLen], .Directory, .{ .major = 0, .minor = 0 }) catch |err| {
+        log.print("could not create dir: {s}", .{@errorName(err)});
+        return sysargs.errorVal;
+    };
+    defer c.iunlockput(inode);
+
+    return 0;
+}
+
+pub fn sys_mknod() u64 {
+    var path: [c.MAXPATH]u8 = undefined;
+    const pathLen = sysargs.getString(.a0, &path) catch |err| {
+        log.print("could not get path: {s}", .{@errorName(err)});
+        return sysargs.errorVal;
+    };
+
+    const major = sysargs.getInt(.a1);
+    const minor = sysargs.getInt(.a2);
+
+    c.begin_op();
+    defer c.end_op();
+
+    const inode = create(path[0..pathLen], .Device, .{ .major = major, .minor = minor }) catch |err| {
+        log.print("could not create node: {s}", .{@errorName(err)});
+        return sysargs.errorVal;
+    };
+    defer c.iunlockput(inode);
+
+    return 0;
+}
+
 //
 // uint64
 // sys_chdir(void)

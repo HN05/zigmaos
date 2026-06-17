@@ -17,10 +17,7 @@ const c = @cImport({
 
 // Prototypes for the functions that handle system calls.
 extern fn sys_chdir() u64;
-extern fn sys_write() u64;
 extern fn sys_mknod() u64;
-extern fn sys_mkdir() u64;
-extern fn sys_close() u64;
 extern fn sys_pipe() u64;
 extern fn sys_exec() u64;
 
@@ -44,7 +41,7 @@ export fn syscall() void {
         .wait => procsyscalls.sys_wait(),
         .kill => procsyscalls.sys_kill(),
         .link => filesyscalls.sys_link(),
-        .mkdir => sys_mkdir(),
+        .mkdir => filesyscalls.sys_mkdir(),
         .mknod => sys_mknod(),
         .open => filesyscalls.sys_open(),
         .pipe => sys_pipe(),
