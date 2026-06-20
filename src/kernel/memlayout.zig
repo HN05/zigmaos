@@ -36,25 +36,29 @@ pub const CLINT_MTIME: *usize = @ptrFromInt(CLINT + 0xBFF8);
 
 // qemu puts platform-level interrupt controller (PLIC) here.
 pub const PLIC = 0x0c000000;
-pub const PLIC_PRIORITY = PLIC + 0x0;
+
+pub inline fn PLIC_PRIORITY(irq: usize) *volatile u32 {
+    return @ptrFromInt(PLIC + irq * @sizeOf(u32));
+}
+
 pub const PLIC_PENDING = PLIC + 0x1000;
-pub inline fn PLIC_MENABLE(hart: usize) usize {
-    return PLIC + 0x2000 + hart * 0x100;
+pub inline fn PLIC_MENABLE(hart: usize) *volatile u32 {
+    return @ptrFromInt(PLIC + 0x2000 + hart * 0x100);
 }
-pub inline fn PLIC_SENABLE(hart: usize) usize {
-    return PLIC + 0x2080 + hart * 0x100;
+pub inline fn PLIC_SENABLE(hart: usize) *volatile u32 {
+    return @ptrFromInt(PLIC + 0x2080 + hart * 0x100);
 }
-pub inline fn PLIC_MPRIORITY(hart: usize) usize {
-    return PLIC + 0x200000 + hart * 0x2000;
+pub inline fn PLIC_MPRIORITY(hart: usize) *volatile u32 {
+    return @ptrFromInt(PLIC + 0x200000 + hart * 0x2000);
 }
-pub inline fn PLIC_SPRIORITY(hart: usize) usize {
-    return PLIC + 0x201000 + hart * 0x2000;
+pub inline fn PLIC_SPRIORITY(hart: usize) *volatile u32 {
+    return @ptrFromInt(PLIC + 0x201000 + hart * 0x2000);
 }
-pub inline fn PLIC_MCLAIM(hart: usize) usize {
-    return PLIC + 0x200004 + hart * 0x2000;
+pub inline fn PLIC_MCLAIM(hart: usize) *volatile u32 {
+    return @ptrFromInt(PLIC + 0x200004 + hart * 0x2000);
 }
-pub inline fn PLIC_SCLAIM(hart: usize) usize {
-    return PLIC + 0x201004 + hart * 0x2000;
+pub inline fn PLIC_SCLAIM(hart: usize) *volatile u32 {
+    return @ptrFromInt(PLIC + 0x201004 + hart * 0x2000);
 }
 
 // the kernel expects there to be RAM
