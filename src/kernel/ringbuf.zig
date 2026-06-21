@@ -16,6 +16,7 @@ const PagePtr = @import("address.zig").PagePtr;
 const Book = com.ringbuf.Book;
 const MagicBuf = com.ringbuf.MagicBuf;
 const Rb = com.ringbuf;
+const mem = @import("memory.zig");
 
 // we expose these in common because they will be usIed by the user lib
 const RINGBUF_SIZE = com.ringbuf.RINGBUF_SIZE;
@@ -111,11 +112,11 @@ const Ringbuf = extern struct {
         };
         owner.proc = null;
         if (owner.vbuf) |vbuf| {
-            c.uvmunmap(proc.pagetable, @intFromPtr(vbuf), vbuf.len / page_size, 0);
+            mem.uvmUnmap(@alignCast(@ptrCast(proc.pagetable)), .fromPtr(vbuf), vbuf.len / page_size, false);
             owner.vbuf = null;
         } else @panic("disowning a ringbuf without a vbuf");
         if (owner.vbook) |vbook_p| {
-            c.uvmunmap(proc.pagetable, @intFromPtr(vbook_p), 1, 0);
+            mem.uvmUnmap(@alignCast(@ptrCast(proc.pagetable)), .fromPtr(vbook_p), 1, false);
             owner.vbuf = null;
         } else @panic("disowning a ringbuf without a vbook");
         self.refcount -= 1;

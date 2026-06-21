@@ -15,17 +15,10 @@ pub const ConstPagePtr = *align(page_size) const [page_size]u8;
 pub const PageSlice = []align(page_size) u8;
 pub const ConstPageSlice = []align(page_size) const u8;
 
-pub const PageTableEntryFlags = packed struct {
-    valid: bool = false,
+pub const PagePermissions = packed struct(u3) {
     read: bool = false,
     write: bool = false,
     execute: bool = false,
-    user: bool = false,
-
-    pub fn mask(self: PageTableEntryFlags) usize {
-        const bits: u5 = @bitCast(self);
-        return @intCast(bits);
-    }
 };
 
 pub const PageTableIndex = enum(u2) {
@@ -39,25 +32,35 @@ pub const PageTableIndex = enum(u2) {
     }
 };
 
-pub const PageTableEntry = struct {
-    value: usize,
+pub const PageTableEntry = packed struct(usize) {
+    valid: bool = false,
+    permissions: PagePermissions = .{},
+    user: bool = false,
+    global: bool = false,
+    accessed: bool = false,
+    dirty: bool = false,
 
-    pub fn set(self: *PageTableEntry, flag: PageTableEntryFlags) void {
-        self.value |= flag.mask();
-    }
-    pub fn clear(self: *PageTableEntry, flag: PageTableEntryFlags) void {
-        self.value &= ~flag.mask();
-    }
-    pub fn has(self: *PageTableEntry, flag: PageTableEntryFlags) bool {
-        return (self.value & flag.mask()) != 0;
-    }
+    // reserved for supervisor
+    reservedFlag1: bool = false,
+    reservedFlag2: bool = false,
 
-    pub fn toAddress(self: *PageTableEntry) KernAddr {
-        return KernAddr.fromInt((self.value >> 10) << 12);
+    ppn: u44 = 0, // page number
+    reserved: u10 = 0, // must be zero
+
+    pub fn asAddress(self: *PageTableEntry) KernAddr {
+        return KernAddr.fromInt(@as(usize, self.ppn) << 12);
     }
 
     pub fn fromAddress(address: KernAddr) PageTableEntry {
-        return .{ .value = (address.toInt() >> 12) << 10 };
+        return .{ .ppn = @intCast(address.toInt() >> 12) };
+    }
+
+    pub fn asPagePtr(self: *PageTableEntry) PagePtr {
+        return asAddress(self).asPtr(PagePtr);
+    }
+
+    pub fn fromPagePtr(pagePtr: PagePtr) PageTableEntry {
+        return .fromAddress(.fromPtr(pagePtr));
     }
 };
 
