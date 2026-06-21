@@ -137,11 +137,11 @@ pub fn Addr(comptime kind: AddrKind) type {
         }
 
         pub fn pageAlignDown(self: Self) Self {
-            return Self.fromInt(pageAlignDown(self.toInt()));
+            return Self.fromInt(pageRoundDown(self.toInt()));
         }
 
         pub fn pageAlignUp(self: Self) Self {
-            return Self.fromInt(pageAlignUp(self.toInt()));
+            return Self.fromInt(pageRoundUp(self.toInt()));
         }
 
         pub fn pagePtrAlignDown(self: Self) PagePtr {
