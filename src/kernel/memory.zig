@@ -29,9 +29,9 @@ pub inline fn sfence_vma() void {
 
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
-// be page-aligned. 
+// be page-aligned.
 // allocate a needed page-table page.
-pub fn kernelVirtualMap(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, physicalAddress: ad.KernAddr, size: usize, permissions: ad.PagePermissions, isUser: bool) void {
+fn virtualMap(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, physicalAddress: ad.KernAddr, size: usize, permissions: ad.PagePermissions, isUser: bool) void {
     if (size == 0) @panic("ke: kerenelVirtualMap");
     const pageCount = virtualAddress.coveringPages(size);
 
@@ -45,6 +45,14 @@ pub fn kernelVirtualMap(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, p
         pte.user = isUser;
         pte.valid = true;
     }
+}
+
+pub fn kernelVirtualMap(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, physicalAddress: ad.KernAddr, size: usize, permissions: ad.PagePermissions) void {
+    virtualMap(pgTable, virtualAddress, physicalAddress, size, permissions, false);
+}
+
+pub fn userVirtualMap(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, physicalAddress: ad.KernAddr, size: usize, permissions: ad.PagePermissions) void {
+    virtualMap(pgTable, virtualAddress, physicalAddress, size, permissions, true);
 }
 
 // Return the address of the PTE in page table pagetable
@@ -100,23 +108,23 @@ fn kernelMemoryMake() ad.PageTablePtr {
     const trampolineAddr = @intFromPtr(&trampoline);
 
     // uart registers
-    kernelVirtualMap(table, .fromInt(ml.UART0), .fromInt(ml.UART0), ad.page_size, .{ .read = true, .write = true }, false);
+    kernelVirtualMap(table, .fromInt(ml.UART0), .fromInt(ml.UART0), ad.page_size, .{ .read = true, .write = true });
 
     // virtio mmio disk interface
-    kernelVirtualMap(table, .fromInt(ml.VIRTIO0), .fromInt(ml.VIRTIO0), ad.page_size, .{ .read = true, .write = true }, false);
+    kernelVirtualMap(table, .fromInt(ml.VIRTIO0), .fromInt(ml.VIRTIO0), ad.page_size, .{ .read = true, .write = true });
 
     // PLIC
-    kernelVirtualMap(table, .fromInt(ml.PLIC), .fromInt(ml.PLIC), ml.PLIC_SIZE, .{ .read = true, .write = true }, false);
+    kernelVirtualMap(table, .fromInt(ml.PLIC), .fromInt(ml.PLIC), ml.PLIC_SIZE, .{ .read = true, .write = true });
 
     // map kernel text executable and read-only.
-    kernelVirtualMap(table, .fromInt(ml.KERNBASE), .fromInt(ml.KERNBASE), etextAddr - ml.KERNBASE, .{ .read = true, .execute = true }, false);
+    kernelVirtualMap(table, .fromInt(ml.KERNBASE), .fromInt(ml.KERNBASE), etextAddr - ml.KERNBASE, .{ .read = true, .execute = true });
 
     // map kernel data and the physical RAM we'll make use of.
-    kernelVirtualMap(table, .fromInt(etextAddr), .fromInt(etextAddr), ml.PHYSTOP - etextAddr, .{ .read = true, .write = true }, false);
+    kernelVirtualMap(table, .fromInt(etextAddr), .fromInt(etextAddr), ml.PHYSTOP - etextAddr, .{ .read = true, .write = true });
 
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
-    kernelVirtualMap(table, .fromInt(ml.TRAMPOLINE), .fromInt(trampolineAddr), ad.page_size, .{ .read = true, .execute = true }, false);
+    kernelVirtualMap(table, .fromInt(ml.TRAMPOLINE), .fromInt(trampolineAddr), ad.page_size, .{ .read = true, .execute = true });
 
     // allocate and map a kernel stack for each process.
     c.proc_mapstacks(@intFromPtr(table));
@@ -162,14 +170,13 @@ pub fn uvmUnmap(pgTable: ad.PageTablePtr, startPage: ad.UserAddr, numPages: usiz
         if (!pte.valid) @panic("uvmUnmap: not mapped");
 
         // leafs have at least one permission set
-        if (pte.permissions == ad.PagePermissions{}) @panic("uvmUnmap: not a leaf");
+        if (pte.isBranch()) @panic("uvmUnmap: not a leaf");
 
         if (doFree) {
-            alloc.freePage(pte.asPagePtr()) catch @panic("uvmUnmap: free page");
+            alloc.freePage(pte.asAddress().asPtr(ad.PagePtr)) catch @panic("uvmUnmap: free page");
         }
         pte.* = .{};
     }
-
 }
 
 // create an empty user page table.
@@ -189,87 +196,77 @@ pub fn uvmFirst(pgTable: ad.PageTablePtr, source: ad.KernAddr, size: usize) void
     const page = alloc.kalloc() catch @panic("out of mem uvmFirst");
     @memset(page, 0);
 
-    kernelVirtualMap(pgTable, .fromInt(0), .fromPtr(page), ad.page_size, .{ .read = true, .write = true, .execute = true }, true);
+    userVirtualMap(pgTable, .fromInt(0), .fromPtr(page), ad.page_size, .{ .read = true, .write = true, .execute = true });
     @memmove(page[0..size], source.asPtr([*]const u8));
 }
 
-//
-// // Allocate PTEs and physical memory to grow process from oldsz to
-// // newsz, which need not be page aligned.  Returns new size or 0 on error.
-// uint64
-// uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
-// {
-//   char *mem;
-//   uint64 a;
-//
-//   if(newsz < oldsz)
-//     return oldsz;
-//
-//   oldsz = PGROUNDUP(oldsz);
-//   for(a = oldsz; a < newsz; a += PGSIZE){
-//     mem = kalloc();
-//     if(mem == 0){
-//       uvmdealloc(pagetable, a, oldsz);
-//       return 0;
-//     }
-//     memset(mem, 0, PGSIZE);
-//     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
-//       kfree(mem);
-//       uvmdealloc(pagetable, a, oldsz);
-//       return 0;
-//     }
-//   }
-//   return newsz;
-// }
-//
-// // Deallocate user pages to bring the process size from oldsz to
-// // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
-// // need to be less than oldsz.  oldsz can be larger than the actual
-// // process size.  Returns the new process size.
-// uint64
-// uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
-// {
-//   if(newsz >= oldsz)
-//     return oldsz;
-//
-//   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
-//     int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
-//     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
-//   }
-//
-//   return newsz;
-// }
-//
-// // Recursively free page-table pages.
-// // All leaf mappings must already have been removed.
-// void
-// freewalk(pagetable_t pagetable)
-// {
-//   // there are 2^9 = 512 PTEs in a page table.
-//   for(int i = 0; i < 512; i++){
-//     pte_t pte = pagetable[i];
-//     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
-//       // this PTE points to a lower-level page table.
-//       uint64 child = PTE2PA(pte);
-//       freewalk((pagetable_t)child);
-//       pagetable[i] = 0;
-//     } else if(pte & PTE_V){
-//       panic("freewalk: leaf");
-//     }
-//   }
-//   kfree((void*)pagetable);
-// }
-//
-// // Free user memory pages,
-// // then free page-table pages.
-// void
-// uvmfree(pagetable_t pagetable, uint64 sz)
-// {
-//   if(sz > 0)
-//     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
-//   freewalk(pagetable);
-// }
-//
+// Allocate PTEs and physical memory to grow process from oldsz to
+// newsz, which need not be page aligned.  Returns new size or an error.
+pub fn uvmAlloc(pgTable: ad.PageTablePtr, oldSize: usize, newSize: usize, permissions: ad.PagePermissions) !usize {
+    if (newSize < oldSize) return oldSize;
+
+    var currentPageVA: ad.UserAddr = .fromInt(oldSize).pageAlignUp();
+
+    while (currentPageVA.toInt() < newSize) : (currentPageVA.add(ad.page_size)) {
+        errdefer uvmDealloc(pgTable, currentPageVA.toInt(), oldSize);
+
+        const physicalPage = alloc.allocPage() orelse return error.OutOfMemory;
+        @memset(physicalPage, 0);
+
+        errdefer alloc.kfree(physicalPage);
+
+        userVirtualMap(pgTable, currentPageVA, .fromPtr(physicalPage), ad.page_size, permissions);
+    }
+    return newSize;
+}
+
+// Deallocate user pages to bring the process size from oldsz to
+// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+// need to be less than oldsz.  oldsz can be larger than the actual
+// process size.  Returns the new process size.
+pub fn uvmDealloc(pgTable: ad.PageTablePtr, oldSize: usize, newSize: usize) usize {
+    if (newSize >= oldSize) return oldSize;
+
+    const newSizeAligned = ad.pageRoundUp(newSize);
+    const oldSizeAligned = ad.pageRoundUp(oldSize);
+
+    if (newSizeAligned < oldSizeAligned) {
+        const pageCount = (oldSizeAligned - newSizeAligned) / ad.page_size;
+        uvmUnmap(pgTable, newSize, pageCount, true);
+    }
+
+    return newSize;
+}
+
+// Recursively free page-table pages.
+// All leaf mappings must already have been removed.
+fn freeWalk(pgTable: ad.PageTablePtr) void {
+    // there are 2^9 = 512 PTEs in a page table.
+    for (pgTable.*) |*pte| {
+        if (!pte.valid) continue;
+        if (pte.isBranch()) {
+            // this PTE points to a lower-level page table.
+            const child = pte.asAddress().asPtr(ad.PageTablePtr);
+            freeWalk(child);
+            pte.* = .{};
+        } else {
+            @panic("freewalk: leaf");
+        }
+    }
+    alloc.freePage(@ptrCast(pgTable));
+}
+
+// Free user memory pages,
+// then free page-table pages.
+pub fn uvmFree(pgTable: ad.PageTablePtr, size: usize) void {
+    if (size > 0) {
+        const sizeAligned = ad.pageRoundUp(size);
+        uvmUnmap(pgTable, .fromInt(0), sizeAligned, true);
+    }
+    freeWalk(pgTable);
+}
+
+
 // // Given a parent process's page table, copy
 // // its memory into a child's page table.
 // // Copies both the page table and the

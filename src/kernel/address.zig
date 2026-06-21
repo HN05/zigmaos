@@ -6,6 +6,16 @@ const kalloc = @import("kalloc.zig");
 
 pub const page_size = riscv.page_size;
 
+// custom logic since it is power of 2
+pub fn pageRoundDown(val: usize) usize {
+    return val & ~@as(usize, page_size - 1); 
+}
+
+pub fn pageRoundUp(val: usize) usize {
+    if (val & (page_size - 1) == 0) return val;
+    return (val + page_size - 1) & ~@as(usize, page_size - 1);
+}
+
 pub const UserAddr = Addr(.user);
 pub const KernAddr = Addr(.kernel);
 
@@ -46,6 +56,10 @@ pub const PageTableEntry = packed struct(usize) {
 
     ppn: u44 = 0, // page number
     reserved: u10 = 0, // must be zero
+    
+    pub fn isBranch(self: *PageTableEntry) bool {
+        return self.permissions == PagePermissions{}; // r, w and x are not set for branch
+    }
 
     pub fn asAddress(self: *PageTableEntry) KernAddr {
         return KernAddr.fromInt(@as(usize, self.ppn) << 12);
@@ -53,14 +67,6 @@ pub const PageTableEntry = packed struct(usize) {
 
     pub fn fromAddress(address: KernAddr) PageTableEntry {
         return .{ .ppn = @intCast(address.toInt() >> 12) };
-    }
-
-    pub fn asPagePtr(self: *PageTableEntry) PagePtr {
-        return asAddress(self).asPtr(PagePtr);
-    }
-
-    pub fn fromPagePtr(pagePtr: PagePtr) PageTableEntry {
-        return .fromAddress(.fromPtr(pagePtr));
     }
 };
 
@@ -131,13 +137,11 @@ pub fn Addr(comptime kind: AddrKind) type {
         }
 
         pub fn pageAlignDown(self: Self) Self {
-            return Self.fromInt(self.toInt() & ~@as(usize, page_size - 1));
+            return Self.fromInt(pageAlignDown(self.toInt()));
         }
 
         pub fn pageAlignUp(self: Self) Self {
-            const value = self.toInt();
-            if (value & (page_size - 1) == 0) return self;
-            return Self.fromInt((value + page_size - 1) & ~@as(usize, page_size - 1));
+            return Self.fromInt(pageAlignUp(self.toInt()));
         }
 
         pub fn pagePtrAlignDown(self: Self) PagePtr {
