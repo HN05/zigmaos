@@ -1,12 +1,12 @@
 const std = @import("std");
 const csr = @import("csr.zig");
-const pagetable = @import("pagetable.zig");
 const riscv = @import("common").riscv;
 const memlayout = @import("memlayout.zig");
 const uart = @import("uart.zig");
 const print = @import("klog.zig").print;
 const plic = @import("plic.zig");
 const ticks = @import("ticks.zig").ticks;
+const ad = @import("address.zig");
 
 const c = @cImport({
     @cInclude("kernel/types.h");
@@ -125,7 +125,7 @@ export fn usertrapret() void {
     csr.Sepc.write(trapframe.epc);
 
     // tell trampoline.S the user page table to switch to.
-    const satp = pagetable.MAKE_SATP(process.pagetable);
+    const satp = csr.Satp.make(@alignCast(@ptrCast(process.pagetable)));
 
     // jump to userret in trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,

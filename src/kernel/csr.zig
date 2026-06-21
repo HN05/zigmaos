@@ -405,9 +405,13 @@ pub const Satp = struct {
     // use riscv's sv39 page table scheme.
     pub const SATP_SV39 = @as(usize, 8) << 60;
 
-    pub fn write(pagetable: address.PageTablePtr) void {
+    pub fn make(pagetable: address.PageTablePtr) usize {
         const ppn = @intFromPtr(pagetable) >> 12;
-        base.write(SATP_SV39 | ppn);
+        return SATP_SV39 | ppn;
+    }
+
+    pub fn write(pagetable: address.PageTablePtr) void {
+        base.write(make(pagetable));
     }
 
     pub fn read() address.PageTablePtr {

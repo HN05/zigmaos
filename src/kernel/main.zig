@@ -12,6 +12,7 @@ const Kalloc = @import("kalloc.zig");
 const plic = @import("plic.zig");
 const console = @import("console.zig");
 const trap = @import("trap.zig");
+const memory = @import("memory.zig");
 
 const log = std.log.scoped(.kmain);
 
@@ -22,8 +23,8 @@ pub fn kmain() void {
         console.init();
         log.info("xv6 kernel is booting", .{});
         Kalloc.kinit(); // set up allocator (zig)
-        c.kvminit(); // create kernel page table
-        c.kvminithart(); // turn on paging
+        memory.kernelMemoryInit(); // create kernel page table
+        memory.kernelMemoryHartInit(); // turn on paging
         c.procinit(); // process table
         trap.initHart(); // install kernel trap vector
         plic.init(); // set up interrupt controller
@@ -38,7 +39,7 @@ pub fn kmain() void {
         while (!started.load(.seq_cst)) {}
 
         log.info("hart {d} starting", .{c.cpuid()});
-        c.kvminithart(); // turn on paging
+        memory.kernelMemoryHartInit(); // turn on paging
         trap.initHart(); // install kernel trap vector
         plic.initHart(); // ask PLIC for device interrupts
     }

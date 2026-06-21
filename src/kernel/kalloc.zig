@@ -49,7 +49,7 @@ pub export fn kalloc() ?*anyopaque {
 /// Frees page
 /// Failures are in the case of a bad given address
 pub fn freePage(page: ad.PagePtr) !void {
-    const pa = ad.KernAddr.fromPagePtr(page);
+    const pa = ad.KernAddr.fromPtr(page);
     if (pa.isOutOfRange()) {
         return error.AddressOutOfRange;
     }

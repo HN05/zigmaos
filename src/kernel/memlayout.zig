@@ -19,11 +19,11 @@
 
 const riscv = @import("common").riscv;
 // qemu puts UART registers here in physical memory.
-pub const UART0 = 0x10000000;
+pub const UART0 = 0x1000_0000;
 pub const UART0_IRQ = 10;
 
 // virtio mmio interface
-pub const VIRTIO0 = 0x10001000;
+pub const VIRTIO0 = 0x1000_1000;
 pub const VIRTIO0_IRQ = 1;
 
 // core local interruptor (CLINT), which contains the timer.
@@ -35,7 +35,8 @@ pub inline fn CLINT_MTIMECMP(hartid: usize) *usize {
 pub const CLINT_MTIME: *usize = @ptrFromInt(CLINT + 0xBFF8);
 
 // qemu puts platform-level interrupt controller (PLIC) here.
-pub const PLIC = 0x0c000000;
+pub const PLIC = 0x0c00_0000;
+pub const PLIC_SIZE = 0x40_0000;
 
 pub inline fn PLIC_PRIORITY(irq: usize) *volatile u32 {
     return @ptrFromInt(PLIC + irq * @sizeOf(u32));

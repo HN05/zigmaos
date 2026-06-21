@@ -23,14 +23,20 @@ pub const PageTableEntryFlags = packed struct {
     user: bool = false,
 
     pub fn mask(self: PageTableEntryFlags) usize {
-        return @bitCast(self);
+        const bits: u5 = @bitCast(self);
+        return @intCast(bits);
     }
 };
 
 pub const PageTableIndex = enum(u2) {
-    first = 0, // VPN[0]
-    second = 1, // VPN[1]
-    third = 2, // VPN[2]
+    leaf = 0, // VPN[0]
+    branch = 1, // VPN[1]
+    root = 2, // VPN[2]
+
+    pub fn down(self: PageTableIndex) ?PageTableIndex {
+        if (self == .leaf) return null;
+        return @enumFromInt(@intFromEnum(self) - 1);
+    }
 };
 
 pub const PageTableEntry = struct {
@@ -42,7 +48,7 @@ pub const PageTableEntry = struct {
     pub fn clear(self: *PageTableEntry, flag: PageTableEntryFlags) void {
         self.value &= ~flag.mask();
     }
-    pub fn isSet(self: *PageTableEntry, flag: PageTableEntryFlags) bool {
+    pub fn has(self: *PageTableEntry, flag: PageTableEntryFlags) bool {
         return (self.value & flag.mask()) != 0;
     }
 
@@ -80,15 +86,25 @@ pub fn Addr(comptime kind: AddrKind) type {
             return self.value;
         }
 
-        pub fn asPtr(self: Self, comptime T: type) *T {
+        pub fn asPtr(self: Self, comptime Ptr: type) Ptr {
             if (addr_kind == .user) {
                 @panic("can't dereference user pointer");
+            }
+
+            comptime {
+                if (@typeInfo(Ptr) != .pointer) {
+                    @compileError("asPtr expects a pointer type");
+                }
             }
             return @ptrFromInt(self.toInt());
         }
 
+        pub fn fromPtr(ptr: *anyopaque) Self {
+            return Self.fromInt(@intFromPtr(ptr));
+        }
+
         pub fn deref(self: Self, comptime T: type) T {
-            return asPtr(self, T).*;
+            return asPtr(self, *T).*;
         }
 
         pub fn isOutOfRange(self: Self) bool {
@@ -112,13 +128,13 @@ pub fn Addr(comptime kind: AddrKind) type {
         }
 
         pub fn pageAlignDown(self: Self) Self {
-            return Self.fromInt(self.toInt() & ~(page_size - 1));
+            return Self.fromInt(self.toInt() & ~@as(usize, page_size - 1));
         }
 
         pub fn pageAlignUp(self: Self) Self {
             const value = self.toInt();
             if (value & (page_size - 1) == 0) return self;
-            return Self.fromInt((value + page_size - 1) & ~(page_size - 1));
+            return Self.fromInt((value + page_size - 1) & ~@as(usize, page_size - 1));
         }
 
         pub fn pagePtrAlignDown(self: Self) PagePtr {
@@ -134,12 +150,15 @@ pub fn Addr(comptime kind: AddrKind) type {
         }
 
         pub fn pageIndex(self: Self, level: PageTableIndex) u9 {
-            const shift: u6 = @intCast(12 + 9 * @intFromEnum(level));
+            const levelInt: usize = @intFromEnum(level);
+            const shift: u6 = @intCast(12 + 9 * levelInt);
             return @intCast((self.toInt() >> shift) & 0x1ff);
         }
 
-        pub fn fromPagePtr(page: PagePtr) Self {
-            return .{ .value = @intFromPtr(page) };
+        pub fn coveringPages(self: Self, len: usize) usize {
+            const firstPage = self.pageAlignDown().toInt();
+            const lastPage = self.add(len - 1).pageAlignDown().toInt();
+            return ((lastPage - firstPage) / page_size) + 1;
         }
     };
 }

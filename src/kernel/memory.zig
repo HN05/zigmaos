@@ -1,23 +1,31 @@
 const std = @import("std");
 
 const c = @cImport({
-@cInclude("kernel/param.h");
-@cInclude("kernel/types.h");
-@cInclude("kernel/memlayout.h");
-@cInclude("kernel/elf.h");
-@cInclude("kernel/riscv.h");
-@cInclude("kernel/defs.h");
-@cInclude("kernel/fs.h");
+    @cInclude("kernel/param.h");
+    @cInclude("kernel/types.h");
+    @cInclude("kernel/memlayout.h");
+    @cInclude("kernel/elf.h");
+    @cInclude("kernel/riscv.h");
+    @cInclude("kernel/defs.h");
+    @cInclude("kernel/fs.h");
 });
 
 const alloc = @import("kalloc.zig");
-pub const ad = @import("address.zig");
+const ad = @import("address.zig");
+const ml = @import("memlayout.zig");
+const csr = @import("csr.zig");
 
-const kernelPagetable: a.PageTablePtr = undefined;
+var kernelPagetable: ad.PageTablePtr = undefined;
 
-extern const etext: anyopaque;  // kernel.ld sets this to end of kernel code.
+extern const etext: anyopaque; // kernel.ld sets this to end of kernel code.
 
 extern const trampoline: anyopaque;
+
+// flush the TLB.
+pub inline fn sfence_vma() void {
+    // the zero, zero means flush all TLB entries.
+    asm volatile ("sfence.vma zero, zero");
+}
 
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
@@ -25,24 +33,17 @@ extern const trampoline: anyopaque;
 // allocate a needed page-table page.
 pub fn kernelVirtualMap(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, physicalAddress: ad.KernAddr, size: usize, permissions: ad.PageTableEntryFlags) void {
     if (size == 0) @panic("ke: kerenelVirtualMap");
-    const firstPage = virtualAddress.pagePtrAlignDown();
-    const lastPage = virtualAddress.add(size - 1).pagePtrAlignDown();
+    const pageCount = virtualAddress.coveringPages(size);
 
+    for (0..pageCount) |i| {
+        const offset = i * ad.page_size;
+
+        const pte = walk(pgTable, virtualAddress.add(offset), true) catch @panic("initing kernel memory error");
+        if (pte.has(.{ .valid = true })) @panic("kernelVirtualMap: already mapped page");
+        pte.* = .fromAddress(physicalAddress.add(offset));
+        pte.set(permissions);
+    }
 }
-//   for(;;){
-//     if((pte = walk(pagetable, a, 1)) == 0)
-//       return -1;
-//     if(*pte & PTE_V)
-//       panic("mappages: remap");
-//     *pte = PA2PTE(pa) | perm | PTE_V;
-//     if(a == last)
-//       break;
-//     a += PGSIZE;
-//     pa += PGSIZE;
-//   }
-//   return 0;
-// }
-
 
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
@@ -57,128 +58,84 @@ pub fn kernelVirtualMap(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, p
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
 
-pub fn walk(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, doAlloc: bool) *ad.PageTableEntry {
-    if (virtualAddress.toInt() >= )
-}
+pub const WalkError = error{
+    InvalidVirtualAddress,
+    OutOfMemory,
+};
 
-// pte_t *
-// walk(pagetable_t pagetable, uint64 va, int alloc)
-// {
-//   if(va >= MAXVA)
-//     panic("walk");
-//
-//   for(int level = 2; level > 0; level--) {
-//     pte_t *pte = &pagetable[PX(level, va)];
-//     if(*pte & PTE_V) {
-//       pagetable = (pagetable_t)PTE2PA(*pte);
-//     } else {
-//       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
-//         return 0;
-//       memset(pagetable, 0, PGSIZE);
-//       *pte = PA2PTE(pagetable) | PTE_V;
-//     }
-//   }
-//   return &pagetable[PX(0, va)];
-// }
+pub fn walk(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddr, doAlloc: bool) WalkError!*ad.PageTableEntry {
+    if (virtualAddress.isOutOfRange()) @panic("walk");
 
+    var level: ad.PageTableIndex = .root;
+    var currentPgTable = pgTable;
+    while (level != .leaf) : (level = level.down().?) {
+        const pte = &currentPgTable[virtualAddress.pageIndex(level)];
+        if (pte.has(.{ .valid = true })) {
+            currentPgTable = pte.toAddress().asPtr(ad.PageTablePtr);
+        } else {
+            if (!doAlloc) {
+                return WalkError.InvalidVirtualAddress;
+            }
+            const page = alloc.allocPage() orelse return WalkError.OutOfMemory;
+            @memset(page, 0);
 
+            currentPgTable = @ptrCast(page);
+            pte.* = .fromAddress(.fromPtr(currentPgTable));
+            pte.set(.{ .valid = true });
+        }
+    }
 
-export fn kvmmap(pgTable: c.pagetable_t, virtualAddress: c.uint64, physicalAddress: c.uint64, size: c.uint64, permissions: c_int) void {
-    kernelVirtualMap(pgTable, virtualAddress, physicalAddress, size, permissions);
-}
-
-fn kernelMemoryMake() pagetable {
-    const kernTable = alloc.allocPage() orelse @panic("no mem available");
-    @memset(kernTable, 0);
+    return &currentPgTable[virtualAddress.pageIndex(.leaf)];
 }
 
 // Make a direct-map page table for the kernel.
-// pagetable_t
-// kvmmake(void)
-// {
-//   pagetable_t kpgtbl;
-//
-//   kpgtbl = (pagetable_t) kalloc();
-//   memset(kpgtbl, 0, PGSIZE);
-//
-//   // uart registers
-//   kvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);
-//
-//   // virtio mmio disk interface
-//   kvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-//
-//   // PLIC
-//   kvmmap(kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
-//
-//   // map kernel text executable and read-only.
-//   kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
-//
-//   // map kernel data and the physical RAM we'll make use of.
-//   kvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
-//
-//   // map the trampoline for trap entry/exit to
-//   // the highest virtual address in the kernel.
-//   kvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
-//
-//   // allocate and map a kernel stack for each process.
-//   proc_mapstacks(kpgtbl);
-//
-//   return kpgtbl;
-// }
-// // extern pagetable_t kvmmake(void);
-//
-// // Initialize the one kernel_pagetable
-// void
-// kvminit(void)
-// {
-//   kernel_pagetable = kvmmake();
-// }
-//
-// // Switch h/w page table register to the kernel's page table,
-// // and enable paging.
-// void
-// kvminithart()
-// {
-//   // wait for any previous writes to the page table memory to finish.
-//   sfence_vma();
-//
-//   w_satp(MAKE_SATP(kernel_pagetable));
-//
-//   // flush stale entries from the TLB.
-//   sfence_vma();
-// }
-//
-// // Return the address of the PTE in page table pagetable
-// // that corresponds to virtual address va.  If alloc!=0,
-// // create any required page-table pages.
-// //
-// // The risc-v Sv39 scheme has three levels of page-table
-// // pages. A page-table page contains 512 64-bit PTEs.
-// // A 64-bit virtual address is split into five fields:
-// //   39..63 -- must be zero.
-// //   30..38 -- 9 bits of level-2 index.
-// //   21..29 -- 9 bits of level-1 index.
-// //   12..20 -- 9 bits of level-0 index.
-// //    0..11 -- 12 bits of byte offset within the page.
-// pte_t *
-// walk(pagetable_t pagetable, uint64 va, int alloc)
-// {
-//   if(va >= MAXVA)
-//     panic("walk");
-//
-//   for(int level = 2; level > 0; level--) {
-//     pte_t *pte = &pagetable[PX(level, va)];
-//     if(*pte & PTE_V) {
-//       pagetable = (pagetable_t)PTE2PA(*pte);
-//     } else {
-//       if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
-//         return 0;
-//       memset(pagetable, 0, PGSIZE);
-//       *pte = PA2PTE(pagetable) | PTE_V;
-//     }
-//   }
-//   return &pagetable[PX(0, va)];
-// }
+fn kernelMemoryMake() ad.PageTablePtr {
+    const page = alloc.allocPage() orelse @panic("no mem available");
+    @memset(page, 0);
+
+    const table: ad.PageTablePtr = @ptrCast(page);
+    const etextAddr = @intFromPtr(&etext);
+    const trampolineAddr = @intFromPtr(&trampoline);
+
+    // uart registers
+    kernelVirtualMap(table, .fromInt(ml.UART0), .fromInt(ml.UART0), ad.page_size, .{ .valid = true, .read = true, .write = true });
+
+    // virtio mmio disk interface
+    kernelVirtualMap(table, .fromInt(ml.VIRTIO0), .fromInt(ml.VIRTIO0), ad.page_size, .{ .valid = true, .read = true, .write = true });
+
+    // PLIC
+    kernelVirtualMap(table, .fromInt(ml.PLIC), .fromInt(ml.PLIC), ml.PLIC_SIZE, .{ .valid = true, .read = true, .write = true });
+
+    // map kernel text executable and read-only.
+    kernelVirtualMap(table, .fromInt(ml.KERNBASE), .fromInt(ml.KERNBASE), etextAddr - ml.KERNBASE, .{ .valid = true, .read = true, .execute = true });
+
+    // map kernel data and the physical RAM we'll make use of.
+    kernelVirtualMap(table, .fromInt(etextAddr), .fromInt(etextAddr), ml.PHYSTOP - etextAddr, .{ .valid = true, .read = true, .write = true });
+
+    // map the trampoline for trap entry/exit to
+    // the highest virtual address in the kernel.
+    kernelVirtualMap(table, .fromInt(ml.TRAMPOLINE), .fromInt(trampolineAddr), ad.page_size, .{ .valid = true, .read = true, .execute = true });
+
+    // allocate and map a kernel stack for each process.
+    c.proc_mapstacks(@intFromPtr(table));
+
+    return table;
+}
+
+pub fn kernelMemoryInit() void {
+    kernelPagetable = kernelMemoryMake();
+}
+
+// Switch h/w page table register to the kernel's page table,
+// and enable paging.
+pub fn kernelMemoryHartInit() void {
+    // wait for any previous writes to the page table memory to finish.
+    sfence_vma();
+    csr.Satp.write(kernelPagetable);
+    // flush stale entries from the TLB.
+    sfence_vma();
+}
+
 //
 // // Look up a virtual address, return the physical address,
 // // or 0 if not mapped.
@@ -446,7 +403,7 @@ fn kernelMemoryMake() pagetable {
 //     *dst_pos++ = *src_pos++;
 //     n--;
 //   }
-//   return dst;  
+//   return dst;
 // }
 //
 // // Copy from kernel to user.
