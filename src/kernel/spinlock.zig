@@ -15,7 +15,7 @@ const csr = @import("csr.zig");
 const interrupts = @import("interrupts.zig");
 const Cpu = @import("cpu.zig");
 
-// Todo: Make this file struct
+// TODO: Make this file struct
 pub const SpinLock = struct {
     isLocked: Atomic(bool) = .init(false),
 
