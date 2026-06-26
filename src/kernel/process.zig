@@ -5,7 +5,7 @@ const ad = @import("address.zig");
 const ml = @import("memlayout.zig");
 const alloc = @import("kalloc.zig");
 const mem = @import("memory.zig");
-const Cpu = @import("cpu.zig").Cpu;
+const Cpu = @import("cpu.zig");
 const interrupts = @import("interrupts.zig");
 
 pub const c = @cImport({

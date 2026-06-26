@@ -13,7 +13,7 @@ const Atomic = std.atomic.Value;
 const riscv = @import("common").riscv;
 const csr = @import("csr.zig");
 const interrupts = @import("interrupts.zig");
-const Cpu = @import("cpu.zig").Cpu;
+const Cpu = @import("cpu.zig");
 
 pub const SpinLock = struct {
     isLocked: Atomic(bool) = .init(false),

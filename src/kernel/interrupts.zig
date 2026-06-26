@@ -1,5 +1,5 @@
 const Sstatus = @import("csr.zig").Sstatus;
-const Cpu = @import("cpu.zig").Cpu;
+const Cpu = @import("cpu.zig");
 
 // enable device interrupts
 pub fn enable() void {
