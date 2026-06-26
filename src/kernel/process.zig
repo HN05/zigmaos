@@ -46,7 +46,7 @@ pub var waitLock: lk.SpinLock = .{ .name = "wait_lock" };
 // Map it high in memory, followed by an invalid
 // guard page.
 pub fn mapKernelStacks(kernelPageTable: ad.PageTablePtr) void {
-    inline for (0.. processTable.len) |index| {
+    inline for (0..processTable.len) |index| {
         const virtualAddress = ml.KSTACK(index);
 
         inline for (0..ml.KSTACK_PAGENUM) |i| {
@@ -138,37 +138,36 @@ pub const ProcessState = enum {
     zombie,
 };
 
+const Process = @This();
 // Per-process state
-pub const Process = struct {
-    lock: lk.SpinLock = .{ .name = "proc" },
+lock: lk.SpinLock = .{ .name = "proc" },
 
-    // p->lock must be held when using these:
-    state: ProcessState = .unused,
-    sleepingOnChannel: ?*anyopaque = undefined, // If non-null, sleeping on channel
-    isKilled: bool = undefined,
-    exitStatus: u32 = undefined, // Exit status to be returned to parent's wait
-    id: u32 = undefined, // process id
+// p->lock must be held when using these:
+state: ProcessState = .unused,
+sleepingOnChannel: ?*anyopaque = undefined, // If non-null, sleeping on channel
+isKilled: bool = undefined,
+exitStatus: u32 = undefined, // Exit status to be returned to parent's wait
+id: u32 = undefined, // process id
 
-    // wait_lock must be held when using this:
-    parentProcess: ?*Process = undefined, // null for root process
+// wait_lock must be held when using this:
+parentProcess: ?*Process = undefined, // null for root process
 
-    // these are private to the process, so p->lock need not be held.
-    kernelStackAddress: ad.UserAddress, // Virtual address of kernel stack
-    size: usize = undefined, // Size of process memory (bytes)
-    pageTable: ad.PageTablePtr = undefined, // User page table
-    topFreeVirtualPage: ad.UserAddress = .fromInt(ml.TRAPFRAME - 2 * ad.page_size), // The highest free user virtual mem page. Starts at TRAPFRAME - 2*PGSIZE and goes down as pages are used.
-    trapFrame: *TrapFrame = undefined, // data page for trampoline.S
-    context: Context = undefined, // swtch() here to run process
-    openFiles: [param.NOFILE]*c.struct_file = undefined, // Open files
-    currentWorkingDirectory: *c.struct_inode = undefined,
-    name: [16]u8 = undefined, // for debugging
-    ownedRingbufsCount: usize = undefined, // Count of ringbufs owned by this process
+// these are private to the process, so p->lock need not be held.
+kernelStackAddress: ad.UserAddress, // Virtual address of kernel stack
+size: usize = undefined, // Size of process memory (bytes)
+pageTable: ad.PageTablePtr = undefined, // User page table
+topFreeVirtualPage: ad.UserAddress = .fromInt(ml.TRAPFRAME - 2 * ad.page_size), // The highest free user virtual mem page. Starts at TRAPFRAME - 2*PGSIZE and goes down as pages are used.
+trapFrame: *TrapFrame = undefined, // data page for trampoline.S
+context: Context = undefined, // swtch() here to run process
+openFiles: [param.NOFILE]*c.struct_file = undefined, // Open files
+currentWorkingDirectory: *c.struct_inode = undefined,
+name: [16]u8 = undefined, // for debugging
+ownedRingbufsCount: usize = undefined, // Count of ringbufs owned by this process
 
-    pub fn getCurrent() ?*Process {
-        interrupts.pushOff();
-        const cpu = Cpu.getCurrent();
-        const proc = cpu.runningProcess;
-        interrupts.popOff();
-        return proc;
-    }
-};
+pub fn getCurrent() ?*Process {
+    interrupts.pushOff();
+    const cpu = Cpu.getCurrent();
+    const proc = cpu.runningProcess;
+    interrupts.popOff();
+    return proc;
+}

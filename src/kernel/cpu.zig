@@ -2,9 +2,8 @@ const common = @import("common");
 const param = common.param;
 const Register = common.riscv.Register;
 const csr = @import("csr.zig");
-const procFile = @import("process.zig");
-const Process = procFile.Process;
-const Context = procFile.Context;
+const Process = @import("process.zig");
+const Context = Process.Context;
 
 const c = @cImport({
     @cInclude("kernel/types.h");
@@ -20,8 +19,8 @@ const c = @cImport({
     @cInclude("kernel/fcntl.h");
 });
 
-const Self = @This();
-pub var table: [param.NCPU]Self = undefined;
+const Cpu = @This();
+pub var table: [param.NCPU]Cpu = undefined;
 
 // Per-CPU state.
 runningProcess: ?*Process, // The process running on this cpu, or null.
@@ -36,7 +35,7 @@ pub fn getCurrentId() usize {
     return Register.read(.tp);
 }
 
-pub fn getCurrent() *Self {
+pub fn getCurrent() *Cpu {
     return &table[getCurrentId()];
 }
 
