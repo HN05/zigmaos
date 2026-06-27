@@ -6,10 +6,7 @@ const ringbuf = @import("ringbuf.zig");
 const SyscallNum = @import("syscallnum.zig").SyscallNum;
 const Process = @import("process.zig");
 
-// Prototypes for the functions that handle system calls.
-extern fn sys_pipe() u64;
-
-export fn syscall() void {
+pub fn handler() void {
     const process = Process.getCurrentForce();
     const num = process.*.trapframe.*.a7;
 

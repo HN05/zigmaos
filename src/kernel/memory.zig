@@ -1,14 +1,5 @@
 const std = @import("std");
 
-const c = @cImport({
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-    @cInclude("kernel/fs.h");
-});
-
 const alloc = @import("kalloc.zig");
 const ad = @import("address.zig");
 const ml = @import("memlayout.zig");

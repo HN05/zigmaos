@@ -2,43 +2,32 @@ const std = @import("std");
 const log = @import("klog.zig");
 const sysargs = @import("sysargs.zig");
 const ticks = @import("ticks.zig").ticks;
-
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/proc.h");
-    @cInclude("kernel/defs.h");
-});
+const Process = @import("process.zig");
 
 pub fn sys_exit() u64 {
-    const exitCode = sysargs.getInt(.a0);
-    c.exit(@intCast(exitCode));
-    unreachable;
+    const exitCode: u32 = @truncate(sysargs.getInt(.a0));
+    Process.exit(@bitCast(exitCode));
+    @panic("should not return after exit");
 }
 
 pub fn sys_getpid() u64 {
-    return @intCast(c.myproc().*.pid);
+    return Process.getCurrentForce().pid_unsafe;
 }
 
 pub fn sys_fork() u64 {
-    return @intCast(c.fork());
+    return Process.fork() catch sysargs.errorVal;
 }
 
 pub fn sys_wait() u64 {
-    const address = sysargs.getInt(.a0);
-    return @intCast(c.wait(@intCast(address)));
+    const address = sysargs.getAddress(.a0);
+    return Process.wait(address) catch sysargs.errorVal;
 }
 
 pub fn sys_sbrk() u64 {
    const requestedBytes = sysargs.getInt(.a0);
-    const oldSize = c.myproc().*.sz;
+    const oldSize = Process.getCurrentForce().size;
 
-    if (c.growproc(@intCast(requestedBytes)) < 0) {
-        return sysargs.errorVal;
-    }
+    Process.changeProcessSize(@bitCast(requestedBytes)) catch return sysargs.errorVal;
     return oldSize;
 }
 
@@ -53,7 +42,8 @@ pub fn sys_sleep() u64 {
 }
 
 pub fn sys_kill() u64 {
-    return @intCast(c.kill(@intCast(sysargs.getInt(.a0))));
+    const pid: u32 = @truncate(sysargs.getInt(.a0));
+    return Process.kill(@bitCast(pid)) catch sysargs.errorVal;
 }
 
 pub fn sys_uptime() u64 {

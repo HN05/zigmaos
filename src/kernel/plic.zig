@@ -5,12 +5,6 @@ const std = @import("std");
 const ml = @import("memlayout.zig");
 const Cpu = @import("cpu.zig");
 
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-});
-
 pub const Irq = enum(u32) {
     uart = ml.uart0_irq,
     virtio = ml.virtio0_irq,

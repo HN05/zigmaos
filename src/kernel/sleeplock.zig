@@ -1,19 +1,8 @@
 // Sleeping locks
 const std = @import("std");
 const SpinLock = @import("spinlock.zig");
-
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/sleeplock.h");
-    @cInclude("kernel/fs.h"); // required before file.h
-    @cInclude("kernel/file.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-    @cInclude("kernel/proc.h");
-});
+const Process = @import("process.zig");
+const scheduler = @import("scheduler.zig");
 
 const SleepLock = @This();
 // Long-term locks for processes
@@ -34,7 +23,7 @@ pub fn acquire(self: *SleepLock) void {
     }
 
     self.isLocked = true;
-    self.pid = c.myproc().*.pid;
+    self.pid = Process.getCurrentForce().pid_unsafe;
 }
 
 pub fn release(self: *SleepLock) void {
@@ -44,12 +33,12 @@ pub fn release(self: *SleepLock) void {
     self.isLocked = false;
     self.pid = null;
 
-    c.wakeup(self);
+    scheduler.wakeup(self);
 }
 
 pub fn isHolding(self: *SleepLock) bool {
     self.spinlock.acquire();
     defer self.spinlock.release();
 
-    return self.isLocked and (self.pid == c.myproc().*.pid);
+    return self.isLocked and (self.pid == Process.getCurrentForce().pid_unsafe);
 }

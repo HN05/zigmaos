@@ -1,13 +1,4 @@
 const std = @import("std");
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/proc.h");
-});
 const com = @import("common");
 const page_size = com.riscv.page_size;
 const SpinLock = @import("spinlock.zig").SpinLock;

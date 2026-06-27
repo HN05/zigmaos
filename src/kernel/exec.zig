@@ -1,27 +1,17 @@
 const elf = @import("elf.zig");
+const common = @import("common");
+const param = common.param;
 const mem = @import("memory.zig");
 const ad = @import("address.zig");
 const std = @import("std");
-
-pub const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/stat.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/proc.h");
-    @cInclude("kernel/fs.h");
-    @cInclude("kernel/sleeplock.h");
-    @cInclude("kernel/file.h");
-    @cInclude("kernel/fcntl.h");
-});
+const Process = @import("process.zig");
+const Inode = @import("inode.zig");
 
 // Load a program segment into pagetable at virtual address va.
 // va must be page-aligned
 // and the pages from va to va+sz must already be mapped.
 // Returns 0 on success, -1 on failure.
-fn loadSegment(pageTable: ad.PageTablePtr, virtualAddress: ad.UserAddress, inode: *c.struct_inode, offset: u64, size: u64) !void {
+fn loadSegment(pageTable: ad.PageTablePtr, virtualAddress: ad.UserAddress, inode: *Inode, offset: u64, size: u64) !void {
     var currentPage: u32 = 0;
     while (currentPage < size) : (currentPage += ad.page_size) {
         const physicalAddress = mem.walkAddr(pageTable, virtualAddress.add(currentPage)) catch @panic("loadSegment: address should exist");
@@ -36,15 +26,15 @@ fn loadSegment(pageTable: ad.PageTablePtr, virtualAddress: ad.UserAddress, inode
 }
 
 pub fn exec(path: []const u8, argv: [][]const u8) !usize {
-    if (argv.len > c.MAXARG) return error.TooManyArguments;
+    if (argv.len > param.MAXARG) return error.TooManyArguments;
 
-    const process = c.myproc();
+    const process = Process.getCurrentForce();
 
-    const pageTable = c.proc_pagetable(process) orelse return error.CouldNotGetProcessPgTable;
+    const pageTable = try process.createPagetable(); 
     var programSize: usize = 0;
-    errdefer c.proc_freepagetable(pageTable, programSize);
+    errdefer Process.freePageTable(pageTable, programSize);
 
-    var inode: *c.struct_inode = undefined;
+    var inode: *Inode = undefined;
     var entry: usize = undefined;
 
     // load program into memory
@@ -94,7 +84,7 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
         }
     }
 
-    const oldSize = process.*.sz;
+    const oldSize = process.size;
 
     // Allocate two pages at the next page boundary.
     // Make the first inaccessible as a stack guard.
@@ -130,7 +120,7 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
     // arguments to user main(argc, argv)
     // argc is returned via the system call return
     // value, which goes in a0.
-    process.*.trapframe.*.a1 = stackPointer;
+    process.trapFrame.a1 = stackPointer;
 
     // Save program name for debugging.
     var last: usize = 0; // index of first char of program name
@@ -141,18 +131,18 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
     }
     const name = path[last..];
 
-    const len = @min(name.len, process.*.name.len - 1);
-    @memcpy(process.*.name[0..len], name[0..len]);
-    process.*.name[0][len] = 0;
+    const len = @min(name.len, process.nameBuffer.len);
+    @memcpy(process.nameBuffer[0..len], name[0..len]);
+    process.nameLength = len;
 
     // Commit to the user image.
-    const oldPageTable = process.*.pagetable;
-    process.*.pagetable = pageTable;
-    process.*.sz = programSize;
-    process.*.trapframe.*.epc = entry; // initial program counter = main
-    process.*.trapframe.*.sp = stackPointer;
+    const oldPageTable = process.pageTable;
+    process.pageTable = pageTable;
+    process.size = programSize;
+    process.trapFrame.epc = entry; // initial program counter = main
+    process.trapFrame.sp = stackPointer;
 
-    c.proc_freepagetable(oldPageTable, oldSize);
+    Process.freePageTable(oldPageTable, oldSize);
 
     return argv.len; // this ends up in a0, the first argument to main(argc, argv)
 }

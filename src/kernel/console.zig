@@ -136,7 +136,6 @@ fn read(comptime address_kind: ad.AddressKind, destination: usize, length: usize
 // wake up consoleread() if a whole line has arrived.
 //
 //
-
 pub fn interrupt(character: u8) void {
     inputBuffer.lock.acquire();
     defer inputBuffer.lock.release();
@@ -203,6 +202,11 @@ pub fn putCharacter(char: u9) void {
     }
 }
 
-export fn consputc(char: c_int) void {
-    putCharacter(@intCast(char));
+// print slice of normal chars
+pub fn writeBytes(bytes: []const u8) void {
+    for (bytes) |byte| putCharacter(byte);
+}
+// print a normal character
+pub fn writeByte(byte: u8) void {
+    putCharacter(byte);
 }

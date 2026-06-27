@@ -4,28 +4,7 @@ const fmt = std.fmt;
 const SpinLock = @import("spinlock.zig").SpinLock;
 const common = @import("common");
 const Color = common.color.Color;
-
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/sleeplock.h");
-    @cInclude("kernel/fs.h");
-    @cInclude("kernel/file.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-    @cInclude("kernel/proc.h");
-});
-
-const console = struct {
-    pub fn writeBytes(bytes: []const u8) void {
-        for (bytes) |byte| c.consputc(byte);
-    }
-    pub fn writeByte(byte: u8) void {
-        c.consputc(byte);
-    }
-};
+const console = @import("console.zig");
 
 var lock: SpinLock = .{ .name = "klog" };
 pub var locking: bool = true;

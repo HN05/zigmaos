@@ -120,7 +120,7 @@ lock: lk.SpinLock = .{ .name = "proc" },
 state_unsafe: ProcessState = .unused,
 sleeping_channel_unsafe: ?*anyopaque = null, // If non-null, sleeping on channel
 is_killed_unsafe: bool = false,
-exit_status_unsafe: u32 = 0, // Exit status to be returned to parent's wait
+exit_status_unsafe: i32 = 0, // Exit status to be returned to parent's wait
 pid_unsafe: u32 = 0, // process id
 
 // wait_lock must be held when using this:
@@ -234,7 +234,7 @@ fn free(process: *Process) void {
 
 // Create a user page table for a given process, with no user memory,
 // but with trampoline and trapframe pages.
-fn createPagetable(process: *Process) !ad.PageTablePtr {
+pub fn createPagetable(process: *Process) !ad.PageTablePtr {
     // An empty page table.
     const pageTable = try mem.uvmCreate();
     errdefer mem.uvmFree(pageTable, 0);
@@ -256,7 +256,7 @@ fn createPagetable(process: *Process) !ad.PageTablePtr {
 
 // Free a process's page table, and free the
 // physical memory it refers to.
-fn freePageTable(pageTable: ad.PageTablePtr, size: usize) void {
+pub fn freePageTable(pageTable: ad.PageTablePtr, size: usize) void {
     errdefer mem.uvmUnmap(pageTable, ml.trampoline_virtual_address, 1, false);
     errdefer mem.uvmUnmap(pageTable, ml.trapframe_virtual_address, 1, false);
     errdefer mem.uvmFree(pageTable, size);
@@ -327,7 +327,7 @@ fn forkReturn() void {
 //
 
 // Grow or shrink user memory by n bytes.
-pub fn changeProccessMemSize(size_diff: i32) !void {
+pub fn changeProcessSize(size_diff: i64) !void {
     const current = getCurrent() orelse return error.CouldNotGetCurrent;
     const old_size = current.size;
     if (size_diff > 0) {
@@ -407,7 +407,7 @@ fn reparentChildren(abandonedProcess: *Process) void {
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
-pub fn exit(status: u32) void {
+pub fn exit(status: i32) void {
     const current_process = getCurrent() orelse @panic("no process running");
 
     if (current_process == initialProcess) @panic("init exiting");

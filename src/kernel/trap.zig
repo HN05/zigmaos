@@ -9,16 +9,9 @@ const ticks = @import("ticks.zig").ticks;
 const ad = @import("address.zig");
 const interrupts = @import("interrupts.zig");
 const Cpu = @import("cpu.zig");
-
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/proc.h");
-    @cInclude("kernel/defs.h");
-});
+const Process = @import("process.zig");
+const syscall = @import("syscall.zig");
+const scheduler = @import("scheduler.zig");
 
 extern const uservec: anyopaque;
 extern const userret: anyopaque;
@@ -42,28 +35,27 @@ export fn usertrap() void {
     // since we're now in the kernel.
     csr.Stvec.write(@intFromPtr(&kernelvec));
 
-    const process: *c.struct_proc = c.myproc();
-    const epc = &process.trapframe[0].epc;
+    const process = Process.getCurrentForce();
 
     // save user program counter.
-    epc.* = @intCast(csr.Sepc.read());
+    process.trapFrame.epc = csr.Sepc.read();
 
     const scause = csr.Scause.read();
     switch (scause.kind()) {
         .syscall => {
-            if (c.killed(process) != 0) {
-                c.exit(-1);
+            if (process.isKilled()) {
+                Process.exit(-1);
             }
 
             // sepc points to the ecall instruction,
             // but we want to return to the next instruction.
-            epc.* += 4;
+            process.trapFrame.epc += 4;
 
             // an interrupt will change sepc, scause, and sstatus,
             // so enable only now that we're done with those registers.
             interrupts.enable();
 
-            c.syscall();
+            syscall.handler();
         },
         .interrupt => {
             handleDeviceInterrupt(scause);
@@ -71,17 +63,17 @@ export fn usertrap() void {
         .exception => {
             print("usertrap(): unexpected scause {x} pid={d}\n", .{ scause.raw(), process.pid });
             print("            sepc={x} stval={x}\n", .{ csr.Sepc.read(), csr.Stval.read() });
-            c.setkilled(process);
+            process.setKilled();
         },
     }
 
-    if (c.killed(process) != 0) {
-        c.exit(-1);
+    if (process.isKilled()) {
+        Process.exit(-1);
     }
 
     // give up the CPU if this is a timer interrupt.
     if (scause == .supervisorSoftwareInterrupt) {
-        c.yield();
+        scheduler.yield();
     }
 
     usertrapret();
@@ -91,7 +83,7 @@ export fn usertrap() void {
 // return to user space
 //
 export fn usertrapret() void {
-    const process: *c.struct_proc = c.myproc();
+    const process = Process.getCurrentForce();
     const trampoline_int = memlayout.trampolinePhysicalAddress().toInt();
     const uservec_int = @intFromPtr(&uservec);
     const userret_int = @intFromPtr(&userret);
@@ -107,7 +99,7 @@ export fn usertrapret() void {
 
     // set up trapframe values that uservec will need when
     // the process next traps into the kernel.
-    const trapframe: *c.struct_trapframe = process.trapframe;
+    const trapframe: *Process.TrapFrame = process.trapFrame;
     trapframe.kernel_satp = csr.Satp.readInt(); // kernel page table
     trapframe.kernel_sp = process.kstack + memlayout.kernel_stack_page_count * riscv.page_size; // process's kernel stack
     trapframe.kernel_trap = @intFromPtr(&usertrap);
@@ -126,7 +118,7 @@ export fn usertrapret() void {
     csr.Sepc.write(trapframe.epc);
 
     // tell trampoline.S the user page table to switch to.
-    const satp = csr.Satp.make(@ptrCast(@alignCast(process.pagetable)));
+    const satp = csr.Satp.make(process.pageTable);
 
     // jump to userret in trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
@@ -158,8 +150,12 @@ export fn kerneltrap() void {
     }
 
     // give up the CPU if this is a timer interrupt.
-    if (scause == .supervisorSoftwareInterrupt and c.myproc() != 0 and c.myproc().*.state == c.RUNNING) {
-        c.yield();
+    if (scause == .supervisorSoftwareInterrupt) {
+        if (Process.getCurrent()) |process| {
+            if (process.state_unsafe == .running) {
+                scheduler.yield();
+            }
+        }
     }
 
     // the yield() may have caused some traps to occur,
