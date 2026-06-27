@@ -13,8 +13,7 @@ const kernel_src = [_][]const u8{
     "src/kernel/entry.S", // Very first boot instructions.
     "src/kernel/string.c", // C string and byte-array library.
     "src/kernel/vm.c", // Manage page tables and address spaces.
-    "src/kernel/proc.c", // Processes and scheduling.
-    "src/kernel/swtch.S", // Thread switching.
+    "src/kernel/switchcontext.S", // Thread switching.
     "src/kernel/trampoline.S", // Assembly code to switch between user and kernel.
     "src/kernel/bio.c", // Disk block cache for the file system.
     "src/kernel/fs.c", // File system.

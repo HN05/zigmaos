@@ -10,6 +10,8 @@ const Cpu = @import("cpu.zig");
 const interrupts = @import("interrupts.zig");
 const std = @import("std");
 const ringbuf = @import("ringbuf.zig");
+const print = @import("klog.zig").print;
+const scheduler = @import("scheduler.zig");
 
 pub const c = @cImport({
     @cInclude("kernel/types.h");
@@ -131,7 +133,7 @@ state: ProcessState = .unused,
 sleepingOnChannel: ?*anyopaque = null, // If non-null, sleeping on channel
 isKilled: bool = false,
 exitStatus: u32 = 0, // Exit status to be returned to parent's wait
-id: u32 = 0, // process id
+pid: u32 = 0, // process id
 
 // wait_lock must be held when using this:
 parentProcess: ?*Process = null, // null for root process
@@ -142,14 +144,18 @@ size: usize = 0, // Size of process memory (bytes)
 pageTable: ad.PageTablePtr = undefined, // User page table
 topFreeVirtualPage: ad.UserAddress = ml.trapframe_virtual_address.sub(2 * ad.page_size), // The highest free user virtual mem page. Starts at TRAPFRAME - 2*PGSIZE and goes down as pages are used.
 trapFrame: *TrapFrame = undefined, // data page for trampoline.S
-context: Context = undefined, // swtch() here to run process
-openFiles: [param.NOFILE]*c.struct_file = undefined, // Open files
+context: Context = undefined, // switchContext() here to run process
+openFiles: [param.NOFILE]?*c.struct_file = [_]?*c.struct_file{null} ** param.NOFILE, // Open files
 currentWorkingDirectory: *c.struct_inode = undefined,
 nameBuffer: [16]u8 = undefined, // for debugging
 nameLength: u4 = 0,
 ownedRingbufsCount: usize = 0, // Count of ringbufs owned by this process
 allocatedTrapFrame: bool = false,
 allocatedPageTable: bool = false,
+
+pub fn getCurrentForce() *Process {
+    return getCurrent() orelse @panic("getCurrentForce: no process running");
+}
 
 pub fn getCurrent() ?*Process {
     interrupts.pushOff();
@@ -164,10 +170,10 @@ fn allocProcessId() u32 {
 }
 
 fn allocFoundProcess(process: *Process) !void {
-    errdefer freeProcess(process);
+    errdefer free(process);
     errdefer process.lock.release();
 
-    process.id = allocProcessId();
+    process.pid = allocProcessId();
     process.state = .used;
 
     // Allocate a trapframe page.
@@ -205,7 +211,7 @@ fn allocProcess() ?*Process {
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
-fn freeProcess(process: *Process) void {
+fn free(process: *Process) void {
     if (process.ownedRingbufsCount > 0) {
         ringbuf.ringbuf_disown_all(process);
     }
@@ -221,7 +227,7 @@ fn freeProcess(process: *Process) void {
     process.topFreeVirtualPage = ml.trapframe_virtual_address.sub(2 * ad.page_size);
     process.size = 0;
     process.ownedRingbufsCount = 0;
-    process.id = 0;
+    process.pid = 0;
     process.parentProcess = null;
     process.nameLength = 0;
     process.sleepingOnChannel = null;
@@ -299,7 +305,7 @@ pub fn initFirstUser() void {
 }
 
 // A fork child's very first scheduling by scheduler()
-// will swtch to forkret.
+// will switchContext to forkret.
 fn forkReturn() void {
 
     // Still holding p->lock from scheduler.
@@ -323,3 +329,239 @@ fn forkReturn() void {
 //   usertrapret();
 // }
 //
+
+// Grow or shrink user memory by n bytes.
+pub fn changeProccessMemSize(size_diff: i32) !void {
+    const current = getCurrent() orelse return error.CouldNotGetCurrent;
+    const old_size = current.size;
+    if (size_diff > 0) {
+        current.size = try mem.uvmAlloc(current.pageTable, old_size, old_size + size_diff, .{ .read = true, .write = true });
+    } else if (size_diff < 0) {
+        current.size = try mem.uvmDealloc(current.pageTable, old_size, old_size + size_diff);
+    }
+}
+
+// Create a new process, copying the parent.
+// Sets up child kernel stack to return as if from fork() system call.
+pub fn fork() !u32 {
+    const parent_process = getCurrent() orelse return error.CouldNotGetCurrent;
+    var child_pid: u32 = undefined;
+    var child_process: *Process = undefined;
+
+    // set up child process
+    {
+        child_process = allocProcess() orelse return error.CouldNotAllocateProcess;
+        defer child_process.lock.release();
+        errdefer child_process.free();
+
+        // Copy user memory from parent to child.
+        try mem.uvmCopy(parent_process.pageTable, child_process.pageTable, parent_process.size);
+        child_process.size = parent_process.size;
+
+        // copy saved user registers.
+        child_process.trapFrame.* = parent_process.trapFrame.*;
+
+        // Cause fork to return 0 in the child.
+        child_process.trapFrame.a0 = 0;
+
+        // increment reference counts on open file descriptors.
+        for (parent_process.openFiles, 0..) |potential_file, index| {
+            if (potential_file) |open_file| {
+                child_process.openFiles[index] = c.filedup(open_file);
+            }
+        }
+        child_process.currentWorkingDirectory = c.idup(parent_process.currentWorkingDirectory);
+
+        child_process.nameLength = parent_process.nameLength;
+        child_process.nameBuffer = @memcpy(&child_process.nameBuffer, parent_process.nameBuffer[0..parent_process.nameLength]);
+
+        child_pid = child_process.pid;
+    }
+
+    // set parent relationship
+    {
+        waitLock.acquire();
+        defer waitLock.release();
+
+        child_process.parentProcess = parent_process;
+    }
+
+    // indicate child ready to run
+    {
+        child_process.lock.acquire();
+        defer child_process.lock.release();
+
+        child_process.state = .runnable;
+    }
+
+    return child_pid;
+}
+
+// Pass p's abandoned children to init.
+// Caller must hold wait_lock.
+fn reparentChildren(abandonedProcess: *Process) void {
+    for (processTable) |proc| {
+        if (proc.parentProcess == abandonedProcess) {
+            proc.parentProcess = initialProcess;
+            scheduler.wakeup(initialProcess);
+        }
+    }
+}
+
+// Exit the current process.  Does not return.
+// An exited process remains in the zombie state
+// until its parent calls wait().
+pub fn exit(status: u32) void {
+    const current_process = getCurrent() orelse @panic("no process running");
+
+    if (current_process == initialProcess) @panic("init exiting");
+
+    // Close all open files.
+    for (current_process.openFiles, 0..) |potential_file, index| {
+        if (potential_file) |open_file| {
+            c.fileclose(open_file);
+            current_process.openFiles[index] = null;
+        }
+    }
+
+    // put directory
+    {
+        c.begin_op();
+        defer c.end_op();
+
+        c.iput(current_process.currentWorkingDirectory);
+    }
+
+    {
+        waitLock.acquire();
+        defer waitLock.release();
+
+        // Give any children to init.
+        reparentChildren(current_process);
+
+        // Parent might be sleeping in wait().
+        scheduler.wakeup(current_process.parentProcess.?);
+
+        current_process.lock.acquire(); // keep holding for scheduler
+        current_process.exitStatus = status;
+        current_process.state = .zombie;
+    }
+
+    // Jump into the scheduler, never to return.
+    scheduler.switchToScheduler();
+    @panic("zombie exit");
+}
+
+// Wait for a child process to exit and return its pid.
+// Return -1 if this process has no children.
+pub fn wait(exit_status_destination: ?ad.UserAddress) !u32 {
+    const current_process = getCurrent() orelse return error.CouldNotGetCurrent;
+
+    waitLock.acquire();
+    errdefer waitLock.release();
+
+    while (true) {
+        // Scan through table looking for exited children.
+        var have_kids: bool = false;
+        for (processTable) |process| {
+            if (process.parentProcess != current_process) continue;
+
+            // make sure the child isn't still in exit() or switchContext().
+            process.lock.acquire();
+            defer process.lock.release();
+
+            have_kids = true;
+            if (process.state == .zombie) {
+                // Found one.
+                if (exit_status_destination) |destination| {
+                    try mem.copyOut(current_process.pageTable, destination, std.mem.asBytes(&process.exitStatus));
+                }
+                const pid = process.pid;
+                free(process);
+                return pid;
+            }
+        }
+
+        // No point waiting if we don't have any children.
+        if (!have_kids or isKilledO(current_process)) return;
+
+        scheduler.sleep(current_process, waitLock);
+    }
+}
+
+
+// Kill the process with the given pid.
+// The victim won't exit until it tries to return
+// to user space (see usertrap() in trap.c).
+pub fn kill(target_pid: u32) !void {
+    for (processTable) |process| {
+        process.lock.acquire();
+        defer process.lock.release();
+
+        if (process.pid == target_pid) {
+            process.isKilled = true;
+            if (process.state == .sleeping) {
+                // Wake process from sleep().
+                process.state = .runnable;
+            }
+            return;
+        }
+    }
+    return error.PidNotFound;
+}
+
+pub fn setKilled(process: *Process) void {
+    process.lock.acquire();
+    defer process.lock.release();
+
+    process.isKilled = true;
+}
+
+//  TODO:
+pub fn isKilledO(process: *Process) bool {
+    process.lock.acquire();
+    defer process.lock.release();
+
+    return process.isKilled;
+}
+
+// Copy to either a user address, or kernel address,
+// depending on usr_dst.
+//  TODO: remove
+export fn either_copyout(isUserDestination: c_int, destination: c.uint64, source: *anyopaque, length: c.uint64) c_int {
+    const process = getCurrent() orelse return -1;
+    const destPointer: [*]u8 = @ptrFromInt(destination);
+    const sourcePointer: [*]const u8 = @ptrCast(source);
+    if (isUserDestination != 0) {
+        mem.copyOut(process.pageTable, .fromInt(destination), sourcePointer[0..length]) catch return -1;
+    } else {
+        @memmove(destPointer, sourcePointer[0..length]);
+    }
+    return 0;
+}
+
+// Copy from either a user address, or kernel address,
+// depending on usr_src.
+// Returns 0 on success, -1 on error.
+export fn either_copyin(destination: *anyopaque, isUserSource: c_int, source: c.uint64, length: c.uint64) c_int {
+    const process = getCurrent() orelse return -1;
+    const destPointer: [*]u8 = @ptrCast(destination);
+    const sourcePointer: [*]const u8 = @ptrFromInt(source);
+
+    if (isUserSource != 0) {
+        mem.copyIn(process.pageTable, destPointer[0..length], .fromInt(source)) catch return -1;
+    } else {
+        @memmove(destPointer[0..length], sourcePointer);
+    }
+    return 0;
+}
+// Print a process listing to console.  For debugging.
+// Runs when user types ^P on console.
+// No lock to avoid wedging a stuck machine further.
+pub fn processDump() void {
+    print("\n", .{});
+    for (processTable) |process| {
+        if (process.state == .unused) continue;
+        print("{d} {s} {s} \n", .{ process.pid, @tagName(process.state), process.nameBuffer[0..process.nameLength] });
+    }
+}
