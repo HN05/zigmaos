@@ -13,20 +13,6 @@ const ringbuf = @import("ringbuf.zig");
 const print = @import("klog.zig").print;
 const scheduler = @import("scheduler.zig");
 
-pub const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/stat.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/proc.h");
-    @cInclude("kernel/fs.h");
-    @cInclude("kernel/sleeplock.h");
-    @cInclude("kernel/file.h");
-    @cInclude("kernel/fcntl.h");
-});
-
 pub var processTable: [param.NPROC]Process = blk: {
     var table: [param.NPROC]Process = undefined;
     for (0..table.len) |index| {
@@ -152,6 +138,10 @@ nameLength: u4 = 0,
 ownedRingbufsCount: usize = 0, // Count of ringbufs owned by this process
 allocatedTrapFrame: bool = false,
 allocatedPageTable: bool = false,
+
+pub fn nameSlice(process: *Process) []const u8 {
+    return process.nameBuffer[0..process.nameLength];
+}
 
 pub fn getCurrentForce() *Process {
     return getCurrent() orelse @panic("getCurrentForce: no process running");
@@ -373,7 +363,7 @@ pub fn fork() !u32 {
         child_process.currentWorkingDirectory = c.idup(parent_process.currentWorkingDirectory);
 
         child_process.nameLength = parent_process.nameLength;
-        child_process.nameBuffer = @memcpy(&child_process.nameBuffer, parent_process.nameBuffer[0..parent_process.nameLength]);
+        child_process.nameBuffer = @memcpy(&child_process.nameBuffer, parent_process.nameSlice());
 
         child_pid = child_process.pid;
     }
@@ -562,6 +552,6 @@ pub fn processDump() void {
     print("\n", .{});
     for (processTable) |process| {
         if (process.state == .unused) continue;
-        print("{d} {s} {s} \n", .{ process.pid, @tagName(process.state), process.nameBuffer[0..process.nameLength] });
+        print("{d} {s} {s} \n", .{ process.pid, @tagName(process.state), process.nameSlice() });
     }
 }

@@ -4,22 +4,13 @@ const procsyscalls = @import("sysproc.zig");
 const filesyscalls = @import("sysfile.zig");
 const ringbuf = @import("ringbuf.zig");
 const SyscallNum = @import("syscallnum.zig").SyscallNum;
-
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/spinlock.h");
-    @cInclude("kernel/proc.h");
-    @cInclude("kernel/defs.h");
-});
+const Process = @import("process.zig");
 
 // Prototypes for the functions that handle system calls.
 extern fn sys_pipe() u64;
 
 export fn syscall() void {
-    const process = c.myproc();
+    const process = Process.getCurrentForce();
     const num = process.*.trapframe.*.a7;
 
     const syscallNum: SyscallNum = @enumFromInt(num);
@@ -49,10 +40,10 @@ export fn syscall() void {
         .uptime => procsyscalls.sys_uptime(),
         .write => filesyscalls.sys_write(),
         else => ret: {
-            log.print("{d} {s}: unkown sys call {d}\n", .{ process.*.pid, process.*.name, num });
+            log.print("{d} {s}: unkown sys call {d}\n", .{ process.pid, process.nameSlice(), num });
             break :ret ~@as(usize, 0);
         },
     };
 
-    process.*.trapframe.*.a0 = @intCast(result);
+    process.trapFrame.a0 = result;
 }

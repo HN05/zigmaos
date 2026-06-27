@@ -55,38 +55,3 @@ pub fn isHolding(self: *SleepLock) bool {
 
     return self.isLocked and (self.pid == c.myproc().*.pid);
 }
-
-export fn initsleeplock(sleeplock: *c.struct_sleeplock, name: [*c]u8) void {
-    CSpinlock.init(@ptrCast(&sleeplock.lk), "sleep lock");
-    sleeplock.name = name;
-    sleeplock.locked = 0;
-    sleeplock.pid = 0;
-}
-
-export fn acquiresleep(sleeplock: *c.struct_sleeplock) void {
-    CSpinlock.acquireLock(@ptrCast(&sleeplock.lk));
-    defer CSpinlock.releaseLock(@ptrCast(&sleeplock.lk));
-
-    while (sleeplock.locked != 0) {
-        c.sleep(sleeplock, &sleeplock.lk);
-    }
-    sleeplock.locked = 1;
-    sleeplock.pid = c.myproc().*.pid;
-}
-
-export fn releasesleep(sleeplock: *c.struct_sleeplock) void {
-    CSpinlock.acquireLock(@ptrCast(&sleeplock.lk));
-    defer CSpinlock.releaseLock(@ptrCast(&sleeplock.lk));
-
-    sleeplock.locked = 0;
-    sleeplock.pid = 0;
-    c.wakeup(sleeplock);
-}
-
-export fn holdingsleep(sleeplock: *c.struct_sleeplock) c_int {
-    CSpinlock.acquireLock(@ptrCast(&sleeplock.lk));
-    defer CSpinlock.releaseLock(@ptrCast(&sleeplock.lk));
-
-    const isLocked = sleeplock.locked != 0 and (sleeplock.pid == c.myproc().*.pid);
-    return @intFromBool(isLocked);
-}

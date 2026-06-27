@@ -1,10 +1,3 @@
-const c = @cImport({
-    @cInclude("kernel/types.h");
-    @cInclude("kernel/param.h");
-    @cInclude("kernel/memlayout.h");
-    @cInclude("kernel/riscv.h");
-    @cInclude("kernel/defs.h");
-});
 const std = @import("std");
 const log_root = @import("klog.zig");
 const riscv = @import("common").riscv;
@@ -14,13 +7,15 @@ const console = @import("console.zig");
 const trap = @import("trap.zig");
 const memory = @import("memory.zig");
 const Process = @import("process.zig");
+const Cpu = @import("cpu.zig");
+const scheduler = @import("scheduler.zig");
 
 const log = std.log.scoped(.kmain);
 
 var started = std.atomic.Value(bool).init(false);
 
 pub fn kmain() void {
-    if (c.cpuid() == 0) {
+    if (Cpu.getCurrent() == 0) {
         console.init();
         log.info("xv6 kernel is booting", .{});
         Kalloc.kinit(); // set up allocator (zig)
@@ -43,7 +38,7 @@ pub fn kmain() void {
         trap.initHart(); // install kernel trap vector
         plic.initHart(); // ask PLIC for device interrupts
     }
-    c.scheduler();
+    scheduler.schedulerLoop();
 }
 
 // overrides the root page allocator
