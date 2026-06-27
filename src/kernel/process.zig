@@ -34,10 +34,7 @@ pub var processTable: [param.NPROC]Process = blk: {
 };
 
 pub var initialProcess: *Process = undefined;
-pub var nextProcessId: std.atomic.Value(u32) = 1;
-
-extern const trampoline: anyopaque;
-const trampoline_physical_address = ad.KernelAddress.fromPtr(&trampoline);
+pub var nextProcessId: std.atomic.Value(u32) = .init(1);
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -110,6 +107,10 @@ pub const TrapFrame = extern struct {
     t4: u64,
     t5: u64,
     t6: u64,
+
+    pub fn asPagePointer(self: *TrapFrame) ad.PagePointer {
+        return @alignCast(@ptrCast(self));
+    }
 };
 
 pub const ProcessState = enum {
@@ -138,15 +139,17 @@ parentProcess: ?*Process = null, // null for root process
 // these are private to the process, so p->lock need not be held.
 kernelStackAddress: ad.UserAddress, // Virtual address of kernel stack
 size: usize = 0, // Size of process memory (bytes)
-pageTable: ?ad.PageTablePtr = null, // User page table
+pageTable: ad.PageTablePtr = undefined, // User page table
 topFreeVirtualPage: ad.UserAddress = ml.trapframe_virtual_address.sub(2 * ad.page_size), // The highest free user virtual mem page. Starts at TRAPFRAME - 2*PGSIZE and goes down as pages are used.
-trapFrame: ?*TrapFrame = null, // data page for trampoline.S
+trapFrame: *TrapFrame = undefined, // data page for trampoline.S
 context: Context = undefined, // swtch() here to run process
 openFiles: [param.NOFILE]*c.struct_file = undefined, // Open files
 currentWorkingDirectory: *c.struct_inode = undefined,
 nameBuffer: [16]u8 = undefined, // for debugging
 nameLength: u4 = 0,
 ownedRingbufsCount: usize = 0, // Count of ringbufs owned by this process
+allocatedTrapFrame: bool = false,
+allocatedPageTable: bool = false,
 
 pub fn getCurrent() ?*Process {
     interrupts.pushOff();
@@ -170,14 +173,16 @@ fn allocFoundProcess(process: *Process) !void {
     // Allocate a trapframe page.
     const trap_page = alloc.allocPage() orelse return error.FailedMemAllocate;
     process.trapFrame = @ptrCast(trap_page);
+    process.allocatedTrapFrame = true;
 
     // An empty user page table.
     process.pageTable = try createPagetable(process);
+    process.allocatedPageTable = true;
 
     // Set up new context to start executing at forkret,
     // which returns to user space.
-    @memset(process.context, 0);
-    process.context.ra = @intFromPtr(forkret);
+    process.context = .{};
+    process.context.ra = @intFromPtr(&forkReturn);
     process.context.sp = process.kernelStackAddress.add(ml.kernel_stack_page_count * ad.page_size).toInt();
 }
 
@@ -186,7 +191,7 @@ fn allocFoundProcess(process: *Process) !void {
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
 fn allocProcess() ?*Process {
-    for (processTable) |process| {
+    for (&processTable) |*process| {
         process.lock.acquire();
         if (process.state == .unused) {
             allocFoundProcess(process) catch return null;
@@ -204,16 +209,16 @@ fn freeProcess(process: *Process) void {
     if (process.ownedRingbufsCount > 0) {
         ringbuf.ringbuf_disown_all(process);
     }
-    if (process.trapFrame) |trapFrame| {
-        alloc.freePage(@ptrCast(trapFrame));
+    if (process.allocatedTrapFrame) {
+        alloc.freePage(process.trapFrame.asPagePointer()) catch @panic("could not free trapframe");
+        process.allocatedTrapFrame = false;
     }
-    process.trapFrame = null;
 
-    if (process.pageTable) |pageTable| {
-        freePageTable(pageTable, process.size);
+    if (process.allocatedPageTable) {
+        freePageTable(process.pageTable, process.size);
+        process.allocatedPageTable = false;
     }
-    process.pageTable = null;
-    process.topFreeVirtualPage = .fromInt(ml.trapframe_virtual_address - 2 * ad.page_size);
+    process.topFreeVirtualPage = ml.trapframe_virtual_address.sub(2 * ad.page_size);
     process.size = 0;
     process.ownedRingbufsCount = 0;
     process.id = 0;
@@ -236,7 +241,7 @@ fn createPagetable(process: *Process) !ad.PageTablePtr {
     // at the highest user virtual address.
     // only the supervisor uses it, on the way
     // to/from user space, so not PTE_U.
-    try mem.kernelVirtualMap(pageTable, ml.trampoline_virtual_address, trampoline_physical_address, ad.page_size, .{ .read = true, .write = true });
+    try mem.kernelVirtualMap(pageTable, ml.trampoline_virtual_address, ml.trampolinePhysicalAddress(), ad.page_size, .{ .read = true, .write = true });
     errdefer mem.uvmUnmap(pageTable, ml.trampoline_virtual_address, 1, false);
 
     // map the trapframe page just below the trampoline page, for
@@ -258,7 +263,7 @@ fn freePageTable(pageTable: ad.PageTablePtr, size: usize) void {
 // a user program that calls exec("/init")
 // assembled from ../user/initcode.S
 // od -t xC ../user/initcode
-const initcode: [_]u8 = {
+const initcode = [_]u8 {
   0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02,
   0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02,
   0x93, 0x08, 0x70, 0x00, 0x73, 0x00, 0x00, 0x00,
@@ -267,6 +272,7 @@ const initcode: [_]u8 = {
   0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00 
 };
+
 
 // Set up first user process.
 pub fn initFirstUser() void {
@@ -284,10 +290,35 @@ pub fn initFirstUser() void {
     initialProcess.trapFrame.sp = ad.page_size;// user stack pointer
     
     const name = "initcode";
-    @memcpy(initialProcess.nameBuffer, name);
+    @memcpy(initialProcess.nameBuffer[0..name.len], name);
     initialProcess.nameLength = name.len;
 
-    initialProcess.currentWorkingDirectory = c.namei("/");
+    initialProcess.currentWorkingDirectory = c.namei(@constCast("/"));
     initialProcess.state = .runnable;
 }
 
+// A fork child's very first scheduling by scheduler()
+// will swtch to forkret.
+fn forkReturn() void {
+
+  // Still holding p->lock from scheduler.
+    getCurrent().?.lock.release();
+}
+// void
+// forkret(void)
+// {
+//   static int first = 1;
+//
+//   release(&myproc()->lock);
+//
+//   if (first) {
+//     // File system initialization must be run in the context of a
+//     // regular process (e.g., because it calls sleep), and thus cannot
+//     // be run from main().
+//     first = 0;
+//     fsinit(ROOTDEV);
+//   }
+//
+//   usertrapret();
+// }
+//

@@ -20,7 +20,6 @@ const c = @cImport({
     @cInclude("kernel/defs.h");
 });
 
-extern const trampoline: anyopaque;
 extern const uservec: anyopaque;
 extern const userret: anyopaque;
 
@@ -93,9 +92,9 @@ export fn usertrap() void {
 //
 export fn usertrapret() void {
     const process: *c.struct_proc = c.myproc();
-    const trampolineAddr = @intFromPtr(&trampoline);
-    const uservecAddr = @intFromPtr(&uservec);
-    const userretAddr = @intFromPtr(&userret);
+    const trampoline_int = memlayout.trampolinePhysicalAddress().toInt();
+    const uservec_int = @intFromPtr(&uservec);
+    const userret_int = @intFromPtr(&userret);
 
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
@@ -103,7 +102,7 @@ export fn usertrapret() void {
     interrupts.disable();
 
     // send syscalls, interrupts, and exceptions to uservec in trampoline.S
-    const trampoline_uservec = memlayout.trampoline_virtual_address.add(uservecAddr - trampolineAddr);
+    const trampoline_uservec = memlayout.trampoline_virtual_address.add(uservec_int - trampoline_int);
     csr.Stvec.write(trampoline_uservec.toInt());
 
     // set up trapframe values that uservec will need when
@@ -132,7 +131,7 @@ export fn usertrapret() void {
     // jump to userret in trampoline.S at the top of memory, which
     // switches to the user page table, restores user registers,
     // and switches to user mode with sret.
-    const trampoline_userret: *const fn (usize) callconv(.c) void = @ptrFromInt(memlayout.trampoline_virtual_int + (userretAddr - trampolineAddr));
+    const trampoline_userret: *const fn (usize) callconv(.c) void = @ptrFromInt(memlayout.trampoline_virtual_int + (userret_int - trampoline_int));
     trampoline_userret(satp);
 }
 

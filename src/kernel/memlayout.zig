@@ -84,6 +84,11 @@ pub const physical_stop_address = kernel_base_address.add(128 * 1024 * 1024);
 pub const trampoline_virtual_int = riscv.max_virtual_address - riscv.page_size;
 pub const trampoline_virtual_address = ad.UserAddress.fromInt(trampoline_virtual_int);
 
+extern const trampoline: anyopaque;
+pub fn trampolinePhysicalAddress() ad.KernelAddress {
+    return .fromPtr(&trampoline);
+}
+
 // map kernel stacks beneath the trampoline,
 // each surrounded by invalid guard pages.
 pub inline fn KSTACK(processId: usize) ad.UserAddress {
@@ -100,6 +105,12 @@ pub inline fn KSTACK(processId: usize) ad.UserAddress {
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 pub const trapframe_virtual_address = trampoline_virtual_address.sub(riscv.page_size);
+
+extern const etext: anyopaque; // kernel.ld sets this to end of kernel code.
+
+pub fn etextAddress() ad.KernelAddress {
+    return .fromPtr(&etext);
+}
 
 
 // first address after kernel.

@@ -27,7 +27,7 @@ const MAX_RINGBUFS = com.ringbuf.MAX_RINGBUFS;
 const RingbufManager = @This();
 
 /// Global spinlock to protect the ringbuf's array
-var spinlock: SpinLock = .{ .name = "ringbuf_man"};
+var spinlock: SpinLock = .{ .name = "ringbuf_man" };
 /// Global array of ringbufs
 var ringbufs: [MAX_RINGBUFS]Ringbuf = [_]Ringbuf{.{}} ** MAX_RINGBUFS;
 
@@ -113,15 +113,15 @@ const Ringbuf = extern struct {
         };
         owner.proc = null;
         if (owner.vbuf) |vbuf| {
-            mem.uvmUnmap(proc.pagetable, .fromPtr(vbuf), vbuf.len / page_size, false);
+            mem.uvmUnmap(proc.pageTable, .fromPtr(vbuf), vbuf.len / page_size, false);
             owner.vbuf = null;
         } else @panic("disowning a ringbuf without a vbuf");
         if (owner.vbook) |vbook_p| {
-            mem.uvmUnmap(proc.pagetable, .fromPtr(vbook_p), 1, false);
+            mem.uvmUnmap(proc.pageTable, .fromPtr(vbook_p), 1, false);
             owner.vbuf = null;
         } else @panic("disowning a ringbuf without a vbook");
         self.refcount -= 1;
-        proc.owned_ringbufs -= 1;
+        proc.ownedRingbufsCount -= 1;
         // we choose to free the physical memory in deactivate, not in uvmunmap
         if (self.refcount == 0) self.deactivate();
     }
@@ -205,34 +205,34 @@ fn ringbuf(name: []const u8, op: Rb.Op, addr_va: *?*align(page_size) anyopaque) 
                 for (&rb.buf_pages) |pg| {
                     // TODO: undo all mappings if we fail to map a page
                     if (pg == null) @panic("buf page is null");
-                    mem.userVirtualMap(proc.pageTable, proc.topFreeVirtualPage, .fromPtr(pg), page_size, .{.read = true, .write = true});
-                    proc.top_free_uvm_pg -= page_size;
+                    mem.userVirtualMap(proc.pageTable, proc.topFreeVirtualPage, .fromPtr(pg.?), page_size, .{ .read = true, .write = true }) catch return Rb.RingbufError.MapPagesFailed;
+                    proc.topFreeVirtualPage = proc.topFreeVirtualPage.sub(page_size);
                 }
             }
             // map the book page right under the ringbuf
             if (rb.book_page == null) @panic("book page is null");
-            mem.userVirtualMap(proc.pageTable, proc.topFreeVirtualPage, .fromPtr(rb.book_page.?), page_size, .{.read = true, .write = true});
-            proc.topFreeVirtualPage = proc.topFreeVirtualPage.minus(page_size);
+            mem.userVirtualMap(proc.pageTable, proc.topFreeVirtualPage, .fromPtr(rb.book_page.?), page_size, .{ .read = true, .write = true }) catch return Rb.RingbufError.MapPagesFailed;
+            proc.topFreeVirtualPage = proc.topFreeVirtualPage.sub(page_size);
             // | btm of ringbuf    |
             // | book              |
             // | top_free_uvm_pg   |
-            const book_vaddr = proc.topFreeVirtualPage + 1 * page_size;
-            var ringbuf_loc = proc.topFreeVirtualPage + 2 * page_size;
+            const book_vaddr = proc.topFreeVirtualPage.add(1 * page_size);
+            var ringbuf_loc = proc.topFreeVirtualPage.add(2 * page_size);
             // store the mapped addresses
-            owner.vbook = @ptrFromInt(book_vaddr);
-            owner.vbuf = @ptrFromInt(ringbuf_loc);
+            owner.vbook = book_vaddr.asPtr(?PagePointer);
+            owner.vbuf = ringbuf_loc.asPtr(?MagicBuf);
 
             // copy the address of the ringbuf into userspace
             // TODO: undo everything if we fail to copyout
-            mem.copyOut(proc.pageTable, .fromPtr(addr_va), std.mem.asBytes(&ringbuf_loc));
+            mem.copyOut(proc.pageTable, .fromPtr(@ptrCast(addr_va)), std.mem.asBytes(&ringbuf_loc)) catch return Rb.RingbufError.CopyOutFailed;
 
             // leave a guard page
-            proc.topFreeVirtualPage -= proc.topFreeVirtualPage.minus(page_size);
+            proc.topFreeVirtualPage = proc.topFreeVirtualPage.sub(page_size);
         },
         .close => {
             var vaddr: ?*anyopaque = null;
             // copy the address of the ringbuf into kernel space
-            mem.copyIn(proc.pageTable, std.mem.asBytes(&vaddr), .fromPtr(addr_va));
+            mem.copyIn(proc.pageTable, std.mem.asBytes(&vaddr), .fromPtr(@ptrCast(addr_va))) catch return Rb.RingbufError.CopyInFailed;
 
             const rb = findRingbufByName(name) orelse return error.NameNotFound;
             const ringbuf_vaddr: usize = @intFromPtr(vaddr orelse return error.NoAddrGiven);
@@ -266,7 +266,7 @@ fn ringbuf(name: []const u8, op: Rb.Op, addr_va: *?*align(page_size) anyopaque) 
             // | top_free_uvm_pg   | <- old proc.top_free_uvm_pg
             if (proc.topFreeVirtualPage.toInt() == ringbuf_vaddr - 3 * page_size) {
                 // move up by guard page + book + double mapped ringbuf
-                proc.topFreeVirtualPage.add(page_size * (1 + 1 + 2 * rb.buf_pages.len));
+                proc.topFreeVirtualPage = proc.topFreeVirtualPage.add(page_size * (1 + 1 + 2 * rb.buf_pages.len));
             }
         },
     }

@@ -17,16 +17,6 @@ const Process = @import("process.zig");
 
 var kernelPagetable: ad.PageTablePtr = undefined;
 
-extern const etext: anyopaque; // kernel.ld sets this to end of kernel code.
-extern const trampoline: anyopaque;
-
-fn trampolineAddress() ad.KernelAddress {
-    return .fromPtr(&trampoline);
-}
-fn etextAddress() ad.KernelAddress {
-    return .fromPtr(&etext);
-}
-
 // flush the TLB.
 pub inline fn sfence_vma() void {
     // the zero, zero means flush all TLB entries.
@@ -144,14 +134,14 @@ fn kernelMemoryMake() ad.PageTablePtr {
     kernelInitMap(table, ml.plic.base_address, ml.plic.size);
 
     // map kernel text executable and read-only.
-    kernelInitMap(table, ml.kernel_base_address, etextAddress().offsetFrom(ml.kernel_base_address));
+    kernelInitMap(table, ml.kernel_base_address, ml.etextAddress().offsetFrom(ml.kernel_base_address));
 
     // map kernel data and the physical RAM we'll make use of.
-    kernelInitMap(table, etextAddress(), ml.physical_stop_address.offsetFrom(etextAddress()));
+    kernelInitMap(table, ml.etextAddress(), ml.physical_stop_address.offsetFrom(ml.etextAddress()));
 
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
-    kernelVirtualMap(table, ml.trampoline_virtual_address, trampolineAddress(), ad.page_size, .{ .read = true, .execute = true }) catch @panic("initing trampoline");
+    kernelVirtualMap(table, ml.trampoline_virtual_address, ml.trampolinePhysicalAddress(), ad.page_size, .{ .read = true, .execute = true }) catch @panic("initing trampoline");
 
     // allocate and map a kernel stack for each process.
     Process.mapKernelStacks(table);
@@ -208,7 +198,7 @@ pub fn uvmUnmap(pgTable: ad.PageTablePtr, startPage: ad.UserAddress, numPages: u
 
 // create an empty user page table.
 pub fn uvmCreate() !ad.PageTablePtr {
-    const page = try alloc.allocPage();
+    const page = alloc.allocPage() orelse return error.CouldNotGetMem;
 
     @memset(page, 0);
     return @ptrCast(page);
@@ -220,7 +210,7 @@ pub fn uvmCreate() !ad.PageTablePtr {
 pub fn uvmFirst(pgTable: ad.PageTablePtr, source: []const u8) void {
     if (source.len >= ad.page_size) @panic("uvmfirst: more than a page");
 
-    const page = alloc.kalloc() catch @panic("out of mem uvmFirst");
+    const page = alloc.allocPage() orelse @panic("out of mem uvmFirst");
     @memset(page, 0);
 
     userVirtualMap(pgTable, .fromInt(0), .fromPtr(page), ad.page_size, .{ .read = true, .write = true, .execute = true }) catch @panic("could not map first proccess");
@@ -269,7 +259,7 @@ pub fn uvmDealloc(pgTable: ad.PageTablePtr, oldSize: usize, newSize: usize) usiz
 // All leaf mappings must already have been removed.
 fn freeWalk(pgTable: ad.PageTablePtr) void {
     // there are 2^9 = 512 PTEs in a page table.
-    for (pgTable.*) |*pte| {
+    for (pgTable) |*pte| {
         if (!pte.valid) continue;
         if (pte.isBranch()) {
             // this PTE points to a lower-level page table.
@@ -280,7 +270,7 @@ fn freeWalk(pgTable: ad.PageTablePtr) void {
             @panic("freewalk: leaf");
         }
     }
-    alloc.freePage(@ptrCast(pgTable));
+    alloc.freePage(@ptrCast(pgTable)) catch @panic("could not free page freeWalk");
 }
 
 // Free user memory pages,
