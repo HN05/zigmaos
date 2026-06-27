@@ -1,4 +1,5 @@
 const Inode = @import("inode.zig");
+const Pipe = @import("pipe.zig");
 
 pub const Kind = enum {
 none, pipe, inode, device,

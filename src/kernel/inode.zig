@@ -9,6 +9,8 @@ pub const Kind = enum {
     file,
 };
 
+const ndirect = 12;
+
 // in-memory copy of an inode
 device_number: u32,
 inode_number: u32,
