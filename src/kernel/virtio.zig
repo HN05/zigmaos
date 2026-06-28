@@ -141,7 +141,10 @@ pub const mmio = struct {
         driver: bool = false,
         driver_ok: bool = false,
         features_ok: bool = false,
-        _reserved: u28 = 0,
+				_reserved: u2 = 0,
+				device_needs_reset = false,
+				failed = false,
+        _unused: u24 = 0,
 
         pub const register = Register{ .offset = 0x070, .access = .rw };
 
