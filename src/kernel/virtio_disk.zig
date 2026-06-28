@@ -8,17 +8,21 @@
 const ml = @import("memlayout.zig");
 const virtio = @import("virtio.zig");
 const alloc = @import("kalloc.zig");
+const Buffer = @import("buffer.zig");
+const Disk = virtio.Disk;
+const Queue = Disk.DiskQueue;
+const mmio = mmio;
 
-var disk: virtio.Disk = undefined;
+var disk: Disk = undefined;
 
 pub fn init() void {
-    if (virtio.mmio.magic_value.read() != virtio.mmio.expected_magic_value) @panic("wrong magic number virtio");
-    if (virtio.mmio.version.read() != virtio.mmio.expected_version) @panic("wrong version number virtio");
-    if (virtio.mmio.vendor_id.read() != virtio.mmio.expected_vendor_id) @panic("wrong vendor_id virtio");
-    if (virtio.mmio.DeviceId.read() != .disk) @panic("virtio device is not a disk");
+    if (mmio.magic_value.read() != mmio.expected_magic_value) @panic("wrong magic number virtio");
+    if (mmio.version.read() != mmio.expected_version) @panic("wrong version number virtio");
+    if (mmio.vendor_id.read() != mmio.expected_vendor_id) @panic("wrong vendor_id virtio");
+    if (mmio.DeviceId.read() != .disk) @panic("virtio device is not a disk");
 
     // reset device
-    var status: virtio.mmio.Status = .{};
+    var status: mmio.Status = .{};
     status.write();
 
     // set ACKNOWLEDGE status bit
@@ -30,11 +34,13 @@ pub fn init() void {
     status.write();
 
     // negotiate features
-    const features: virtio.mmio.Features = .{
-        .blk_ro = true,
-        .blk_scsi = true,
-        .blk_config_wce = true,
-        .blk_mq = true,
+    const features = mmio.Features{
+        .device_specific = .{ .block = .{
+            .ro = true,
+            .scsi = true,
+            .config_wce = true,
+            .mq = true,
+        } },
         .any_layout = true,
         .ring_event_idx = true,
         .ring_indirect_desc = true,
@@ -50,36 +56,36 @@ pub fn init() void {
     if (!status.features_ok) @panic("virtio disk features_ok unset");
 
     // initialize queue 0.
-    virtio.mmio.Queue.select(0);
+    mmio.Queue.select(0);
 
     // ensure queue 0 is not in use.
-    if (virtio.mmio.Queue.isReady()) @panic("virtio disk should not be ready");
+    if (mmio.Queue.isReady()) @panic("virtio disk should not be ready");
 
     // check maximum queue size.
-    const max = virtio.mmio.queue_num_max.read();
+    const max = mmio.queue_num_max.read();
     if (max == 0) @panic("virtio disk has no queue 0");
-    if (max < virtio.num_virtio_descriptors) @panic("virtio disk max queue too short");
+    if (max < Disk.queue_size) @panic("virtio disk max queue too short");
 
     // allocate and zero queue memory.
     //  TODO: allocate memory more effectivly
-    const descriptor: *virtio.QueueDescriptor = alloc.allocZeroedPageForce();
-    const available: *virtio.QueueAvailable = alloc.allocZeroedPageForce();
-    const used: *virtio.QueueUsed = alloc.allocZeroedPageForce();
+    const descriptor: [Queue.size]Queue.Descriptor = @ptrCast(alloc.allocZeroedPageForce());
+    const available: *Queue.Available = @ptrCast(alloc.allocZeroedPageForce());
+    const used: *Queue.Used = @ptrCast(alloc.allocZeroedPageForce());
 
     // set queue size.
-    virtio.mmio.Queue.setSize(virtio.num_virtio_descriptors);
+    mmio.Queue.setSize(virtio.num_virtio_descriptors);
 
     // write physical addresses.
-    virtio.mmio.queue_descriptor_table.write(.fromPtr(descriptor));
-    virtio.mmio.driver_desc.write(.fromPtr(available));
-    virtio.mmio.device_desc.write(.fromPtr(used));
+    mmio.queue_descriptor_table.write(.fromPtr(descriptor));
+    mmio.driver_desc.write(.fromPtr(available));
+    mmio.device_desc.write(.fromPtr(used));
 
     // queue is ready.
-    virtio.mmio.Queue.setReady(true);
+    mmio.Queue.setReady(true);
 
     // init disk
     disk = .{
-        .desc = descriptor,
+        .descriptor = descriptor,
         .available = available,
         .used = used,
         .vdisk_lock = .{ .name = "virtio disk" },
@@ -98,21 +104,26 @@ pub fn init() void {
 
     // plic.c and trap.c arrange for interrupts from VIRTIO0_IRQ.
 }
-//
-// // find a free descriptor, mark it non-free, return its index.
-// static int
-// alloc_desc()
-// {
-//   for(int i = 0; i < NUM; i++){
-//     if(disk.free[i]){
-//       disk.free[i] = 0;
-//       return i;
-//     }
-//   }
-//   return -1;
-// }
-//
-// // mark a descriptor as free.
+
+// find a free descriptor, mark it non-free, return its index.
+fn allocDescriptor() !usize {
+    for (disk.free, 0..) |is_free, index| {
+        if (is_free) {
+            disk.free[index] = false;
+            return index;
+        }
+    }
+    return error.NoFreeDescriptor;
+}
+
+// mark a descriptor as free.
+fn freeDescriptor(index: usize) void {
+    if (index >= disk.free.len) @panic("freeDescriptor out of range");
+    if (disk.free[index]) @panic("freeDescriptor already free");
+
+    disk.d
+}
+
 // static void
 // free_desc(int i)
 // {
@@ -159,6 +170,7 @@ pub fn init() void {
 //   return 0;
 // }
 //
+pub fn readWrite(buffer: *Buffer, doWrite: bool) void {}
 // void
 // virtio_disk_rw(struct buf *b, int write)
 // {

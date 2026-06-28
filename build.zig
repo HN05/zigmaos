@@ -13,13 +13,7 @@ const kernel_src = [_][]const u8{
     "src/kernel/entry.S", // Very first boot instructions.
     "src/kernel/switchcontext.S", // Thread switching.
     "src/kernel/trampoline.S", // Assembly code to switch between user and kernel.
-    // "src/kernel/bio.c", // Disk block cache for the file system.
-    // "src/kernel/fs.c", // File system.
-    // "src/kernel/log.c", // File system logging and crash recovery.
-    // "src/kernel/file.c", // File descriptor support.
-    // "src/kernel/pipe.c", // Pipes.
     "src/kernel/kernelvec.S", // Handle traps from kernel, and timer interrupts.
-    // "src/kernel/virtio_disk.c", // Disk device driver.
 };
 
 const cflags = [_][]const u8{
