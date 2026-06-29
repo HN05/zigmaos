@@ -21,207 +21,202 @@
 //   ...
 // Log appends are synchronous.
 
+const common = @import("common");
+const SpinLock = @import("spinlock.zig");
+const Device = @import("device.zig");
+const fs = @import("filesystem.zig");
+const Buffer = @import("buffer.zig");
+const scheduler = @import("scheduler.zig");
+
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
-// struct logheader {
-//   int n;
-//   int block[LOGSIZE];
-// };
+const Header = struct {
+    length: u32,
+    block: [common.param.log_size]u32,
+
+    pub fn copyFrom(destination: *Header, source: *Header) void {
+        destination.length = source.length;
+        for (0..destination.length) |index| {
+            destination.block[index] = source.block[index];
+        }
+    }
+};
+
+comptime {
+    if (@sizeOf(Header) > fs.block_size) @compileError("too big logheader");
+}
+
+const Log = struct {
+    lock: SpinLock,
+    start: u32,
+    size: u32,
+    outstanding: u32, // how many FS sys calls are executing.
+    is_commiting: bool, // in commit(), please wait.
+    device: Device.ID,
+    header: Header,
+};
+
+const log: Log = undefined;
+
+pub fn init(device: Device.ID, superblock: fs.SuperBlock) void {
+    log = .{
+        .lock = .{ .name = "log" },
+        .start = superblock.logstart,
+        .size = superblock.nlog,
+        .outstanding = 0,
+        .is_commiting = false,
+        .device = device,
+        .header = .{ .length = undefined, .block = undefined },
+    };
+    recoverFromLog();
+}
+
+// Copy committed blocks from log to their home location
+fn installTransaction(is_recovering: bool) void {
+    for (0..log.header.length) |tail| {
+        const log_buffer = Buffer.read(log.device, log.start + tail + 1);
+        defer log_buffer.release();
+
+        const destination_buffer = Buffer.read(log.device, log.header.block[tail]);
+        defer destination_buffer.release();
+
+        @memmove(&destination_buffer.data, &log_buffer.data);
+
+        destination_buffer.write(); // write destination to disk
+        if (is_recovering) {
+            destination_buffer.unpin();
+        }
+    }
+}
+
+// Read the log header from disk into the in-memory log header
+fn readHead() void {
+    const buffer = Buffer.read(log.device, log.start);
+    defer buffer.release();
+
+    const disk_header: *Header = @ptrCast(&buffer.data);
+
+    log.header.copyFrom(disk_header);
+}
+// Write in-memory log header to disk.
+// This is the true point at which the
+// current transaction commits.
+fn writeHead() void {
+    const buffer = Buffer.read(log.device, log.start);
+    defer buffer.release();
+
+    const disk_header: *Header = @ptrCast(&buffer.data);
+    disk_header.copyFrom(log.header);
+
+    buffer.write();
+}
+
+fn recoverFromLog() void {
+    readHead();
+    installTransaction(true); // if committed, copy from log to disk
+    log.header.length = 0;
+    writeHead(); // clear the log
+}
+
+// called at the start of each FS system call.
+pub fn beginOperation() void {
+    log.lock.acquire();
+    defer log.lock.release();
+
+    while (true) {
+        const possible_log_size = log.header.length + (log.outstanding + 1) * common.param.max_num_operation_blocks;
+
+        if (log.is_commiting or possible_log_size > common.param.log_size) {
+            log.lock.sleep(&log);
+        } else {
+            log.outstanding += 1;
+            break;
+        }
+    }
+}
+// called at the end of each FS system call.
+// commits if this was the last outstanding operation.
+pub fn endOperation() void {
+    var do_commit = false;
+    {
+        log.lock.acquire();
+        defer log.lock.release();
+
+        log.outstanding -= 1;
+        if (log.is_commiting) @panic("log commiting");
+
+        if (log.outstanding == 0) {
+            do_commit = true;
+            log.is_commiting = true;
+        } else {
+            // begin_op() may be waiting for log space,
+            // and decrementing log.outstanding has decreased
+            // the amount of reserved space.
+            scheduler.wakeup(&log);
+        }
+    }
+    if (do_commit) {
+        // call commit w/o holding locks, since not allowed
+        // to sleep with locks.
+        commit();
+        log.lock.acquire();
+        defer log.lock.release();
+        log.is_commiting = false;
+        scheduler.wakeup(&log);
+    }
+}
+
+// Copy modified blocks from cache to log.
+fn writeLog() void {
+    for (0..log.header.length) |tail| {
+        const buffer_destination = Buffer.read(log.device, log.start + tail + 1); // log block
+        defer buffer_destination.release();
+
+        const buffer_source = Buffer.read(log.device, log.header.block[tail]); // cache block
+        defer buffer_source.release();
+
+        @memmove(&buffer_destination.data, &buffer_source.data);
+
+        buffer_destination.write(); // write the log
+    }
+}
+
+fn commit() void {
+    if (log.header.length > 0) {
+        writeLog();// Write modified blocks from cache to log
+        writeHead();// Write header to disk -- the real commit
+        installTransaction(false); // Now install writes to home locations
+        log.header.length = 0;
+        writeHead();// Erase the transaction from the log
+    }
+
+}
+
+// Caller has modified b->data and is done with the buffer.
+// Record the block number and pin in the cache by increasing refcnt.
+// commit()/write_log() will do the disk write.
 //
-// struct log {
-//   struct spinlock lock;
-//   int start;
-//   int size;
-//   int outstanding; // how many FS sys calls are executing.
-//   int committing;  // in commit(), please wait.
-//   int dev;
-//   struct logheader lh;
-// };
-// struct log log;
-//
-// static void recover_from_log(void);
-// static void commit();
-//
-// void
-// initlog(int dev, struct superblock *sb)
-// {
-//   if (sizeof(struct logheader) >= BSIZE)
-//     panic("initlog: too big logheader");
-//
-//   initlock(&log.lock, "log");
-//   log.start = sb->logstart;
-//   log.size = sb->nlog;
-//   log.dev = dev;
-//   recover_from_log();
-// }
-//
-// // Copy committed blocks from log to their home location
-// static void
-// install_trans(int recovering)
-// {
-//   int tail;
-//
-//   for (tail = 0; tail < log.lh.n; tail++) {
-//     struct buf *lbuf = bread(log.dev, log.start+tail+1); // read log block
-//     struct buf *dbuf = bread(log.dev, log.lh.block[tail]); // read dst
-//     memmove(dbuf->data, lbuf->data, BSIZE);  // copy block to dst
-//     bwrite(dbuf);  // write dst to disk
-//     if(recovering == 0)
-//       bunpin(dbuf);
-//     brelse(lbuf);
-//     brelse(dbuf);
-//   }
-// }
-//
-// // Read the log header from disk into the in-memory log header
-// static void
-// read_head(void)
-// {
-//   struct buf *buf = bread(log.dev, log.start);
-//   struct logheader *lh = (struct logheader *) (buf->data);
-//   int i;
-//   log.lh.n = lh->n;
-//   for (i = 0; i < log.lh.n; i++) {
-//     log.lh.block[i] = lh->block[i];
-//   }
-//   brelse(buf);
-// }
-//
-// // Write in-memory log header to disk.
-// // This is the true point at which the
-// // current transaction commits.
-// static void
-// write_head(void)
-// {
-//   struct buf *buf = bread(log.dev, log.start);
-//   struct logheader *hb = (struct logheader *) (buf->data);
-//   int i;
-//   hb->n = log.lh.n;
-//   for (i = 0; i < log.lh.n; i++) {
-//     hb->block[i] = log.lh.block[i];
-//   }
-//   bwrite(buf);
-//   brelse(buf);
-// }
-//
-// static void
-// recover_from_log(void)
-// {
-//   read_head();
-//   install_trans(1); // if committed, copy from log to disk
-//   log.lh.n = 0;
-//   write_head(); // clear the log
-// }
-//
-// // called at the start of each FS system call.
-// void
-// begin_op(void)
-// {
-//   acquire(&log.lock);
-//   while(1){
-//     if(log.committing){
-//       sleep(&log, &log.lock);
-//     } else if(log.lh.n + (log.outstanding+1)*MAXOPBLOCKS > LOGSIZE){
-//       // this op might exhaust log space; wait for commit.
-//       sleep(&log, &log.lock);
-//     } else {
-//       log.outstanding += 1;
-//       release(&log.lock);
-//       break;
-//     }
-//   }
-// }
-//
-// // called at the end of each FS system call.
-// // commits if this was the last outstanding operation.
-// void
-// end_op(void)
-// {
-//   int do_commit = 0;
-//
-//   acquire(&log.lock);
-//   log.outstanding -= 1;
-//   if(log.committing)
-//     panic("log.committing");
-//   if(log.outstanding == 0){
-//     do_commit = 1;
-//     log.committing = 1;
-//   } else {
-//     // begin_op() may be waiting for log space,
-//     // and decrementing log.outstanding has decreased
-//     // the amount of reserved space.
-//     wakeup(&log);
-//   }
-//   release(&log.lock);
-//
-//   if(do_commit){
-//     // call commit w/o holding locks, since not allowed
-//     // to sleep with locks.
-//     commit();
-//     acquire(&log.lock);
-//     log.committing = 0;
-//     wakeup(&log);
-//     release(&log.lock);
-//   }
-// }
-//
-// // Copy modified blocks from cache to log.
-// static void
-// write_log(void)
-// {
-//   int tail;
-//
-//   for (tail = 0; tail < log.lh.n; tail++) {
-//     struct buf *to = bread(log.dev, log.start+tail+1); // log block
-//     struct buf *from = bread(log.dev, log.lh.block[tail]); // cache block
-//     memmove(to->data, from->data, BSIZE);
-//     bwrite(to);  // write the log
-//     brelse(from);
-//     brelse(to);
-//   }
-// }
-//
-// static void
-// commit()
-// {
-//   if (log.lh.n > 0) {
-//     write_log();     // Write modified blocks from cache to log
-//     write_head();    // Write header to disk -- the real commit
-//     install_trans(0); // Now install writes to home locations
-//     log.lh.n = 0;
-//     write_head();    // Erase the transaction from the log
-//   }
-// }
-//
-// // Caller has modified b->data and is done with the buffer.
-// // Record the block number and pin in the cache by increasing refcnt.
-// // commit()/write_log() will do the disk write.
-// //
-// // log_write() replaces bwrite(); a typical use is:
-// //   bp = bread(...)
-// //   modify bp->data[]
-// //   log_write(bp)
-// //   brelse(bp)
-// void
-// log_write(struct buf *b)
-// {
-//   int i;
-//
-//   acquire(&log.lock);
-//   if (log.lh.n >= LOGSIZE || log.lh.n >= log.size - 1)
-//     panic("too big a transaction");
-//   if (log.outstanding < 1)
-//     panic("log_write outside of trans");
-//
-//   for (i = 0; i < log.lh.n; i++) {
-//     if (log.lh.block[i] == b->blockno)   // log absorption
-//       break;
-//   }
-//   log.lh.block[i] = b->blockno;
-//   if (i == log.lh.n) {  // Add new block to log?
-//     bpin(b);
-//     log.lh.n++;
-//   }
-//   release(&log.lock);
-// }
-//
+// log_write() replaces bwrite(); a typical use is:
+//   bp = bread(...)
+//   modify bp->data[]
+//   log_write(bp)
+//   brelse(bp)
+pub fn logWrite(buffer: *Buffer) void {
+    log.lock.acquire();
+    defer log.lock.release();
+
+    if (log.header.length >= common.param.log_size or log.header.length >= log.size - 1) @panic("too big a transaction");
+    if (log.outstanding < 1) @panic("log_write outside of trans");
+
+    var index = 0;
+    while (index < log.header.length) : (index += 1) {
+        if (log.header.block[index] == buffer.block_number) {
+            break;// log absorption
+        }
+    }
+    log.header.block[index] = buffer.block_number;
+    if (index == log.header.length) {// Add new block to log?
+        buffer.pin();
+        log.header.length += 1;
+    }
+}

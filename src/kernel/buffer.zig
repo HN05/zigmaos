@@ -89,16 +89,14 @@ const Cache = struct {
     }
 };
 
-pub const cache = Cache{};
-comptime {
-    cache.init_array();
-}
+pub const cache = &cacheBacking;
+var cacheBacking = Cache{};
 
 // Return a locked buf with the contents of the indicated block.
 pub fn read(device: Device.ID, block_number: u32) *Buffer {
     const buffer = cache.get_buffer(device, block_number);
     if (!buffer.is_valid) {
-        virtio.disk_driver.readWrite(buffer, false);
+        virtio.disk_driver.read(buffer);
         buffer.is_valid = true;
     }
     return buffer;
@@ -107,7 +105,7 @@ pub fn read(device: Device.ID, block_number: u32) *Buffer {
 // Write buffer's contents to disk.  Must be locked.
 pub fn write(buffer: *Buffer) void {
     if (!buffer.lock.isHolding()) @panic("buffer write");
-    virtio.disk_driver.readWrite(buffer, true);
+    virtio.disk_driver.write(buffer);
 }
 
 // Release a locked buffer.

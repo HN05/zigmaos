@@ -10,6 +10,7 @@ const Process = @import("process.zig");
 const Cpu = @import("cpu.zig");
 const scheduler = @import("scheduler.zig");
 const virtio = @import("virtiodriver.zig");
+const Buffer = @import("buffer.zig");
 
 const log = std.log.scoped(.kmain);
 
@@ -25,7 +26,7 @@ pub fn kmain() void {
         trap.initHart(); // install kernel trap vector
         plic.init(); // set up interrupt controller
         plic.initHart(); // ask PLIC for device interrupts
-        c.binit(); // buffer cache
+        Buffer.cache.init_array(); // buffer cache
         c.iinit(); // inode table
         c.fileinit(); // file table
         virtio.init(); // emulated hard disk

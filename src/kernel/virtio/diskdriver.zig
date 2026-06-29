@@ -174,7 +174,15 @@ inline fn fullMemoryBarrier() void {
     asm volatile ("fence rw, rw" ::: "memory");
 }
 
-pub fn readWrite(buffer: *Buffer, do_write: bool) void {
+pub fn read(buffer: *Buffer) void {
+    readOrWrite(buffer, false);
+}
+
+pub fn write(buffer: *Buffer) void {
+    readOrWrite(buffer, true);
+}
+
+fn readOrWrite(buffer: *Buffer, do_write: bool) void {
     const sector = buffer.block_number * (fs.block_size / Disk.sector_size);
 
     disk.vdisk_lock.acquire();
