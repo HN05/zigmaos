@@ -104,8 +104,8 @@ pub fn walk(pgTable: ad.PageTablePtr, virtualAddress: ad.UserAddress, doAlloc: b
     return &currentPgTable[virtualAddress.pageIndex(.leaf)];
 }
 
-fn kernelInitMap(pgTable: ad.PageTablePtr, physicalAddress: ad.KernelAddress, size: usize) void {
-    kernelVirtualMap(pgTable, .fromInt(physicalAddress.toInt()), physicalAddress, size, .{ .read = true, .write = true }) catch @panic("initing kernel memory");
+fn kernelInitMap(pgTable: ad.PageTablePtr, physicalAddress: ad.KernelAddress, size: usize, isWrite: bool) void {
+    kernelVirtualMap(pgTable, .fromInt(physicalAddress.toInt()), physicalAddress, size, .{ .read = true, .write = isWrite, .execute = !isWrite }) catch @panic("initing kernel memory");
 }
 
 // Make a direct-map page table for the kernel.
@@ -116,19 +116,19 @@ fn kernelMemoryMake() ad.PageTablePtr {
     const table: ad.PageTablePtr = @ptrCast(page);
 
     // uart registers
-    kernelInitMap(table, ml.uart0_base_address, ad.page_size);
+    kernelInitMap(table, ml.uart0_base_address, ad.page_size, true);
 
     // virtio mmio disk interface
-    kernelInitMap(table, ml.virtio0_base_address, ad.page_size);
+    kernelInitMap(table, ml.virtio0_base_address, ad.page_size, true,);
 
     // PLIC
-    kernelInitMap(table, ml.plic.base_address, ml.plic.size);
+    kernelInitMap(table, ml.plic.base_address, ml.plic.size, true);
 
     // map kernel text executable and read-only.
-    kernelInitMap(table, ml.kernel_base_address, ml.etextAddress().offsetFrom(ml.kernel_base_address));
+    kernelInitMap(table, ml.kernel_base_address, ml.etextAddress().offsetFrom(ml.kernel_base_address), false);
 
     // map kernel data and the physical RAM we'll make use of.
-    kernelInitMap(table, ml.etextAddress(), ml.physical_stop_address.offsetFrom(ml.etextAddress()));
+    kernelInitMap(table, ml.etextAddress(), ml.physical_stop_address.offsetFrom(ml.etextAddress()), true);
 
     // map the trampoline for trap entry/exit to
     // the highest virtual address in the kernel.
