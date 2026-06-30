@@ -31,7 +31,7 @@ lock: SleepLock = .{ .name = "buffer" },
 reference_count: u32 = 0,
 previous: *Buffer = undefined, // LRU cache list
 next: *Buffer = undefined,
-data: [fs.block_size]u8 = undefined,
+data: [fs.block_size]u8 align(8) = undefined,
 
 pub fn castData(buffer: *Buffer, comptime T: type) *T {
     return std.mem.bytesAsValue(

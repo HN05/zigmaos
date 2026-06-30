@@ -74,7 +74,7 @@ pub fn init(device: Device.ID, superblock: fs.SuperBlock) void {
 // Copy committed blocks from log to their home location
 fn installTransaction(is_recovering: bool) void {
     for (0..log.header.length) |tail| {
-        const log_buffer = Buffer.read(log.device, log.start + tail + 1);
+        const log_buffer = Buffer.read(log.device, @intCast(log.start + tail + 1));
         defer log_buffer.release();
 
         const destination_buffer = Buffer.read(log.device, log.header.block[tail]);
@@ -106,7 +106,7 @@ fn writeHead() void {
     defer buffer.release();
 
     const disk_header: *Header = buffer.castData(Header);
-    disk_header.copyFrom(log.header);
+    disk_header.copyFrom(&log.header);
 
     buffer.write();
 }
@@ -169,7 +169,7 @@ pub fn endOperation() void {
 // Copy modified blocks from cache to log.
 fn writeLog() void {
     for (0..log.header.length) |tail| {
-        const buffer_destination = Buffer.read(log.device, log.start + tail + 1); // log block
+        const buffer_destination = Buffer.read(log.device, @intCast(log.start + tail + 1)); // log block
         defer buffer_destination.release();
 
         const buffer_source = Buffer.read(log.device, log.header.block[tail]); // cache block
@@ -208,7 +208,7 @@ pub fn write(buffer: *Buffer) void {
     if (log.header.length >= common.param.log_size or log.header.length >= log.size - 1) @panic("too big a transaction");
     if (log.outstanding < 1) @panic("log_write outside of trans");
 
-    var index = 0;
+    var index: usize = 0;
     while (index < log.header.length) : (index += 1) {
         if (log.header.block[index] == buffer.block_number) {
             break;// log absorption

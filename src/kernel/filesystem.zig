@@ -40,7 +40,7 @@ const BlockBitmap = struct {
 
     pub fn isUsed(self: BlockBitmap, bit_index: usize) bool {
         const byte_index = bit_index / 8;
-        const bit_offset: u3 = bit_index % 8;
+        const bit_offset: u3 = @intCast(bit_index % 8);
         const mask: u8 = @as(u8, 1) << bit_offset;
 
         return (self.bytes[byte_index] & mask) != 0;
@@ -48,7 +48,7 @@ const BlockBitmap = struct {
 
     pub fn markUsed(self: BlockBitmap, bit_index: usize) void {
         const byte_index = bit_index / 8;
-        const bit_offset: u3 = bit_index % 8;
+        const bit_offset: u3 = @intCast(bit_index % 8);
         const mask: u8 = @as(u8, 1) << bit_offset;
 
         self.bytes[byte_index] |= mask;
@@ -57,7 +57,7 @@ const BlockBitmap = struct {
     pub fn markFree(self: BlockBitmap, bit_index: usize) void {
         if (isUsed(self, bit_index)) @panic("trying to free used block");
         const byte_index = bit_index / 8;
-        const bit_offset: u3 = bit_index % 8;
+        const bit_offset: u3 = @intCast(bit_index % 8);
         const mask: u8 = @as(u8, 1) << bit_offset;
 
         self.bytes[byte_index] &= ~mask;
@@ -126,7 +126,7 @@ fn zeroBlock(device: Device.ID, block_number: u32) void {
 
 // Allocate a zeroed disk block.
 pub fn blockAllocate(device: Device.ID) !u32 {
-    var block_number = 0;
+    var block_number: u32 = 0;
     while (block_number < superBlock.size) : (block_number += bitmap_bits_per_block) {
         var allocated_block: ?u32 = null;
         {
@@ -144,7 +144,7 @@ pub fn blockAllocate(device: Device.ID) !u32 {
                 bitmap.markUsed(block_index);
                 log.write(buffer);
 
-                allocated_block = block_number + block_index;
+                allocated_block = @intCast(block_number + block_index);
             }
         }
         if (allocated_block) |block| {

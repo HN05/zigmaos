@@ -364,7 +364,7 @@ pub fn fork() !u32 {
         child_process.currentWorkingDirectory = parent_process.currentWorkingDirectory.duplicate();
 
         child_process.nameLength = parent_process.nameLength;
-        child_process.nameBuffer = @memcpy(&child_process.nameBuffer, parent_process.nameSlice());
+        @memcpy(&child_process.nameBuffer, parent_process.nameSlice());
 
         child_pid = child_process.pid_unsafe;
     }

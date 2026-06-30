@@ -1,16 +1,17 @@
 const Inode = @import("inode.zig");
 const std = @import("std");
+const fs = @import("filesystem.zig");
 
 const Directory = @This();
 
-pub const max_entry_name_length = 14;
-pub const entry_size = @sizeOf(DirectoryEntry);
+pub const entry_size = 32;
+pub const max_entry_name_length = entry_size - @sizeOf(u32) - @sizeOf(u8);
 
 inode: *Inode,
 
 // Directory is a file containing a sequence of dirent structures.
 pub const DirectoryEntry = extern struct {
-    inode_number: u16 = 0,
+    inode_number: u32 = 0,
     name_length: u8 = 0,
     name_buffer: [max_name_length]u8 = undefined,
 
@@ -36,8 +37,8 @@ pub fn init(inode: *Inode) Directory {
 
 // Look for a directory entry in a directory.
 // If found, set *poff to byte offset of entry.
-pub fn lookupChild(directory: *Directory, name: []const u8, entry_offset: ?*u32) ?*Inode {
-    var current_offset = 0;
+pub fn lookupChild(directory: *const Directory, name: []const u8, entry_offset: ?*u32) ?*Inode {
+    var current_offset: u32 = 0;
     var entry: DirectoryEntry = undefined;
     while (current_offset < directory.inode.disk_inode.size) : (current_offset += entry_size) {
         const read_bytes = directory.inode.read(.kernel, @intFromPtr(&entry_size), current_offset, entry_size) catch @panic("dirlookup read failed");
@@ -57,7 +58,7 @@ pub fn lookupChild(directory: *Directory, name: []const u8, entry_offset: ?*u32)
 }
 
 // Write a new directory entry (name, inum) into the directory dp.
-pub fn linkEntry(directory: Directory, name: []const u8, inode_number: u32) !void {
+pub fn linkEntry(directory: *const Directory, name: []const u8, inode_number: u32) !void {
     if (name.len > DirectoryEntry.max_name_length) return error.NameToLong;
 
     // Check that name is not present.
@@ -68,7 +69,7 @@ pub fn linkEntry(directory: Directory, name: []const u8, inode_number: u32) !voi
     }
 
     // Look for an empty dirent.
-    var current_offset = 0;
+    var current_offset: u32 = 0;
     var entry: DirectoryEntry = undefined;
     while (current_offset < directory.inode.disk_inode.size) : (current_offset += entry_size) {
         const read_bytes = directory.inode.read(.kernel, @intFromPtr(&entry_size), current_offset, entry_size) catch @panic("linkEntry: could not read directory");
@@ -78,14 +79,14 @@ pub fn linkEntry(directory: Directory, name: []const u8, inode_number: u32) !voi
     }
 
     @memcpy(&entry.name_buffer, name);
-    entry.name_length = name.len;
+    entry.name_length = @intCast(name.len);
     entry.inode_number = inode_number;
 
     const written_bytes = try directory.inode.write(.kernel, @intFromPtr(&entry), current_offset, entry_size);
     if (written_bytes != entry_size) return error.WriteMalformed;
 }
 
-pub fn isEmpty(directory: Directory) bool {
+pub fn isEmpty(directory: *const Directory) bool {
     const directory_offset = @sizeOf(DirectoryEntry);
     var index: usize = 2; // skip past . and ..
     var directory_entry: DirectoryEntry = undefined;

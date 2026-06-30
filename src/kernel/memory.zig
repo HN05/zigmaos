@@ -291,14 +291,14 @@ pub fn uvmCopy(oldTable: ad.PageTablePtr, newTable: ad.PageTablePtr, size: usize
         const oldMemory = pte.asAddress().asPtr(ad.PagePointer);
 
         const newPage = alloc.allocPage() orelse return error.OutOfMemory;
-        errdefer alloc.freePage(newPage);
+        errdefer alloc.freePage(newPage) catch @panic("could not free allocated page");
 
         @memmove(newPage, oldMemory);
 
         if (pte.user) {
-            try userVirtualMap(newPage, pageAddr, .fromPtr(newPage), ad.page_size, pte.permissions);
+            try userVirtualMap(newTable, pageAddr, .fromPtr(newPage), ad.page_size, pte.permissions);
         } else {
-            try kernelVirtualMap(newPage, pageAddr, .fromPtr(newPage), ad.page_size, pte.permissions);
+            try kernelVirtualMap(newTable, pageAddr, .fromPtr(newPage), ad.page_size, pte.permissions);
         }
     }
 }

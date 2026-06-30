@@ -50,10 +50,12 @@ pub const IPB = (BSIZE / @sizeOf(Dinode));
 // Bitmap bits per block
 pub const BPB = (BSIZE * 8);
 
-// Directory is a file containing a sequence of dirent structures.
-pub const DIRSIZ = 14;
+pub const DIRENT_SIZE = 32;
+pub const DIRSIZ = DIRENT_SIZE - @sizeOf(u32) - @sizeOf(u8); // 27
 
-pub const Dirent = struct {
-    inum: u16,
+pub const Dirent = extern struct {
+    inum: u32,
+    name_length: u8,
     name: [DIRSIZ]u8,
 };
+

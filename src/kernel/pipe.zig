@@ -19,10 +19,10 @@ const Pipe = @This();
 
 pub fn alloc(read_file: **File, write_file: **File) !void {
     read_file.* = File.alloc() orelse return error.CouldNotAllocateFile;
-    errdefer read_file.close();
+    errdefer read_file.*.close();
 
     write_file.* = File.alloc() orelse return error.CouldNotAllocateFile;
-    errdefer write_file.close();
+    errdefer write_file.*.close();
 
     const page = memalloc.allocPage() orelse return error.CouldNotAllocatePipe;
     errdefer memalloc.freePage(page);
@@ -34,29 +34,33 @@ pub fn alloc(read_file: **File, write_file: **File) !void {
     pipe.write_count = 0;
     pipe.lock = .{ .name = "pipe" };
 
-    read_file.*.*.data.pipe = .{ .pipe = pipe };
-    read_file.*.*.is_readable = true;
-    read_file.*.*.is_writeable = false;
+    read_file.*.data.pipe = .{ .pipe = pipe };
+    read_file.*.is_readable = true;
+    read_file.*.is_writeable = false;
 
-    write_file.*.*.data.pipe = .{ .pipe = pipe };
-    write_file.*.*.is_readable = false;
-    write_file.*.*.is_writeable = true;
+    write_file.*.data.pipe = .{ .pipe = pipe };
+    write_file.*.is_readable = false;
+    write_file.*.is_writeable = true;
 }
 
 pub fn close(pipe: *Pipe, close_write: bool) void {
-    pipe.lock.acquire();
-    defer pipe.lock.release();
+    var free_pipe = false;
+    {
+        pipe.lock.acquire();
+        defer pipe.lock.release();
 
-    if (close_write) {
-        pipe.write_is_open = false;
-        scheduler.wakeup(&pipe.read_count);
-    } else {
-        pipe.read_is_open = false;
-        scheduler.wakeup(&pipe.write_count);
+        if (close_write) {
+            pipe.write_is_open = false;
+            scheduler.wakeup(&pipe.read_count);
+        } else {
+            pipe.read_is_open = false;
+            scheduler.wakeup(&pipe.write_count);
+        }
+        if (!pipe.read_is_open and !pipe.write_is_open) {
+            free_pipe = true;
+        }
     }
-    if (!pipe.read_is_open and !pipe.write_is_open) {
-        memalloc.kfree(&pipe);
-    }
+    if (free_pipe) memalloc.kfree(pipe);
 }
 
 pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
@@ -117,7 +121,7 @@ pub fn read(pipe: *Pipe, address: ad.UserAddress, read_count: u32) !u32 {
 
         const read_position = pipe.read_count % pipe_size;
         const bytes_until_end = pipe_size - read_position;
-        
+
         const chunked_read_count = @min(bytes_until_end, bytes_to_read);
         const end_read = read_position + chunked_read_count;
 

@@ -179,7 +179,7 @@ fn get(device: Device.ID, inode_number: u32) *Inode {
 
     // Is the inode already in the table?
     var empty_inode: ?*Inode = null;
-    for (inode_table.inodes) |inode| {
+    for (&inode_table.inodes) |*inode| {
         if (inode.reference_count > 0 and inode.filesystem_device == device and inode.inode_number == inode_number) {
             inode.reference_count += 1;
             return inode;
@@ -365,7 +365,7 @@ pub fn read(inode: *Inode, comptime address_kind: ad.AddressKind, destination: u
         bytes_to_read = inode.disk_inode.size - offset;
     }
 
-    var bytes_read = 0;
+    var bytes_read: u32 = 0;
     var current_offset = offset;
     var current_destination = destination;
 

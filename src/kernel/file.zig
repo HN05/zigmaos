@@ -37,12 +37,12 @@ is_readable: bool = false,
 is_writeable: bool = false,
 data: FileData = .none,
 
-pub fn getType(file: File) FileType {
+pub fn getType(file: *const File) FileType {
     return std.meta.activeTag(file.data);
 }
 
 // must check before that is either inode or device type
-pub fn getInode(file: File) *Inode {
+pub fn getInode(file: *const File) *Inode {
     return switch (file.data) {
         .inode => |inode| inode.inode,
         .device => |device| device.inode,
@@ -50,7 +50,7 @@ pub fn getInode(file: File) *Inode {
     };
 }
 
-pub fn hasInode(file: File) bool {
+pub fn hasInode(file: *const File) bool {
     return file.data == .device or file.data == .inode;
 }
 
@@ -107,7 +107,7 @@ pub fn close(file: *File) void {
     // clean up file data
     switch (closed_file.data) {
         .pipe => |pipe| {
-            pipe.close();
+            pipe.close(closed_file.is_writeable);
         },
         .inode, .device => {
             log.beginOperation();
@@ -121,8 +121,8 @@ pub fn close(file: *File) void {
 
 // Get metadata about file f.
 // addr is a user virtual address, pointing to a struct stat.
-pub fn getStatus(file: *File, destination_address: ad.UserAddress) !void {
-    if (!hasInode(file)) return error.WrongFileType;
+pub fn getStatus(file: *const File, destination_address: ad.UserAddress) !void {
+    if (!file.hasInode()) return error.WrongFileType;
 
     var status: fs.FileStatus = undefined;
     // get status

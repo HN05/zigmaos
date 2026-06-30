@@ -82,7 +82,8 @@ pub fn sys_fstat() u64 {
         return sysargs.errorVal;
     };
 
-    return file.getStatus(stat) catch sysargs.errorVal;
+    file.getStatus(stat) catch return sysargs.errorVal;
+    return 0;
 }
 
 pub fn sys_link() u64 {
