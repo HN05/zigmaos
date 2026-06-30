@@ -102,7 +102,7 @@ pub fn usertrapret() void {
     // the process next traps into the kernel.
     const trapframe: *Process.TrapFrame = process.trapFrame;
     trapframe.kernel_satp = csr.Satp.readInt(); // kernel page table
-    trapframe.kernel_sp = process.kstack + memlayout.kernel_stack_page_count * riscv.page_size; // process's kernel stack
+    trapframe.kernel_sp = process.kernelStackAddress.toInt() + memlayout.kernel_stack_page_count * riscv.page_size; // process's kernel stack
     trapframe.kernel_trap = @intFromPtr(&usertrap);
     trapframe.kernel_hartid = riscv.Register.read(.tp); // hartid for cpuid()
 

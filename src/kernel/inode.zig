@@ -440,7 +440,7 @@ pub fn write(inode: *Inode, address_kind: ad.AddressKind, source: usize, offset:
 //   skipelem("a", name) = "", setting name = "a"
 //   skipelem("", name) = skipelem("////", name) = 0
 //
-fn skipPathElement(path: []const u8, name: *[]u8) ?[]const u8 {
+fn skipPathElement(path: []const u8, name: *[]const u8) ?[]const u8 {
     // Skip leading slashes.
     const start = std.mem.findNone(u8, path, "/") orelse return null;
 
@@ -463,7 +463,7 @@ fn skipPathElement(path: []const u8, name: *[]u8) ?[]const u8 {
 // If returnParent, return the inode for the parent and copy the final
 // path element into name, which must have room for DIRSIZ bytes.
 // Must be called inside a transaction since it calls iput().
-fn resolvePathHelper(path: []const u8, returnParent: bool, name: *[]u8) ?*Inode {
+fn resolvePathHelper(path: []const u8, returnParent: bool, name: *[]const u8) ?*Inode {
     if (path.len == 0) return null;
 
     var current_inode = if (path[0] == '/') get(.root_fs_device, root_inode_number) else duplicate(Process.getCurrentForce().currentWorkingDirectory);
@@ -475,7 +475,7 @@ fn resolvePathHelper(path: []const u8, returnParent: bool, name: *[]u8) ?*Inode 
             var put_inode = true;
 
             current_inode.lock();
-            defer { 
+            defer {
                 current_inode.release();
                 if (put_inode) current_inode.put();
             }
@@ -501,13 +501,12 @@ fn resolvePathHelper(path: []const u8, returnParent: bool, name: *[]u8) ?*Inode 
     return current_inode;
 }
 
-
 pub fn resolvePath(path: []const u8) ?*Inode {
-    var name: [Directory.DirectoryEntry.max_name_length]u8 = undefined;
-    return resolvePathHelper(path, false, name[0..]);
+    var name: []const u8 = undefined;
+    return resolvePathHelper(path, false, &name);
 }
 
-pub fn resolvePathParent(path: []const u8) ?*Inode {
-    var name: [Directory.DirectoryEntry.max_name_length]u8 = undefined;
-    return resolvePathHelper(path, true, name[0..]);
+// name points to data inside path slice
+pub fn resolvePathParent(path: []const u8, name: *[]const u8) ?*Inode {
+    return resolvePathHelper(path, true, name);
 }

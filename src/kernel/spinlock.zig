@@ -35,7 +35,7 @@ pub fn release(self: *SpinLock) void {
     interrupts.popOff();
 }
 
-pub fn isHolding(self: *SpinLock) bool {
+pub fn isHolding(self: *const SpinLock) bool {
     return (self.isLocked.raw and self.cpu == Cpu.getCurrent());
 }
 

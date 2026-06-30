@@ -8,7 +8,7 @@ const Process = @import("process.zig");
 
 pub fn handler() void {
     const process = Process.getCurrentForce();
-    const num = process.*.trapframe.*.a7;
+    const num = process.trapFrame.a7;
 
     const syscallNum: SyscallNum = @enumFromInt(num);
 

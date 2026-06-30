@@ -7,7 +7,6 @@
 const std = @import("std");
 
 const sysargs = @import("sysargs.zig");
-const c = sysargs.c;
 const log = @import("debuglog.zig");
 const common = @import("common");
 const param = common.param;
@@ -19,6 +18,9 @@ const execFile = @import("exec.zig");
 const Inode = @import("inode.zig");
 const File = @import("file.zig");
 const Device = @import("device.zig");
+const Process = @import("process.zig");
+const fslog = @import("log.zig");
+const Directory = @import("directory.zig");
 
 pub fn sys_dup() u64 {
     const file = sysargs.getFile(.a0) catch |err| {
@@ -31,7 +33,7 @@ pub fn sys_dup() u64 {
         return sysargs.errorVal;
     };
 
-    _ = c.filedup(file);
+    _ = file.duplicate();
     return fd;
 }
 
@@ -44,12 +46,7 @@ pub fn sys_read() u64 {
         return sysargs.errorVal;
     };
 
-    const result = c.fileread(file, destination.toInt(), @intCast(number));
-    if (result < 0) {
-        return sysargs.errorVal;
-    } else {
-        return @intCast(result);
-    }
+    return file.read(destination, @intCast(number)) catch sysargs.errorVal;
 }
 
 pub fn sys_write() u64 {
@@ -61,25 +58,19 @@ pub fn sys_write() u64 {
         return sysargs.errorVal;
     };
 
-    const result = c.filewrite(file, source.toInt(), @intCast(number));
-    if (result < 0) {
-        return sysargs.errorVal;
-    } else {
-        return @intCast(result);
-    }
+    return file.write(source, @intCast(number)) catch sysargs.errorVal;
 }
 
 pub fn sys_close() u64 {
-    var file: *c.struct_file = undefined;
+    var file: *File = undefined;
     const fd = sysargs.getFileAndDescriptor(.a0, &file) catch |err| {
         log.print("could not get file: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
-    const files: *[c.NOFILE][*c]c.struct_file = &c.myproc().*.ofile;
-    files.*[fd] = null;
+    Process.getCurrentForce().openFiles[fd] = null;
 
-    c.fileclose(file);
+    file.close();
     return 0;
 }
 
@@ -91,12 +82,7 @@ pub fn sys_fstat() u64 {
         return sysargs.errorVal;
     };
 
-    const result = c.filestat(file, stat.toInt());
-    if (result < 0) {
-        return sysargs.errorVal;
-    } else {
-        return @intCast(result);
-    }
+    return file.getStatus(stat) catch sysargs.errorVal;
 }
 
 pub fn sys_link() u64 {
@@ -119,69 +105,50 @@ const LinkErrors = error{
 
 // Create the path new as a link to the same inode as old.
 pub fn link() LinkErrors!void {
-    var old: [c.MAXPATH]u8 = undefined;
-    _ = sysargs.getString(.a0, &old) catch return LinkErrors.FailedGetOldPath;
+    var old: [Inode.max_path_size]u8 = undefined;
+    const old_length = sysargs.getString(.a0, &old) catch return LinkErrors.FailedGetOldPath;
 
-    var new: [c.MAXPATH]u8 = undefined;
-    _ = sysargs.getString(.a1, &new) catch return LinkErrors.FailedGetNewPath;
+    var new: [Inode.max_path_size]u8 = undefined;
+    const new_length = sysargs.getString(.a1, &new) catch return LinkErrors.FailedGetNewPath;
 
-    c.begin_op();
-    defer c.end_op();
+    fslog.beginOperation();
+    defer fslog.endOperation();
 
-    const inode = c.namei(&old) orelse return LinkErrors.FailedGetInode;
-    defer c.iput(inode);
+    const inode = Inode.resolvePath(old[0..old_length]) orelse return LinkErrors.FailedGetInode;
+    defer inode.put();
 
     // increment references to inode
     {
-        c.ilock(inode);
-        defer c.iunlock(inode);
+        inode.lock();
+        defer inode.release();
 
-        if (inode.*.type == c.T_DIR) return LinkErrors.IsDirectory;
+        if (inode.disk_inode.type == .directory) return LinkErrors.IsDirectory;
 
-        inode.*.nlink += 1;
-        c.iupdate(inode);
+        inode.disk_inode.link_count += 1;
+        inode.update();
     }
 
     // Roll back increment if it fails
     errdefer {
-        c.ilock(inode);
-        inode.*.nlink -= 1;
-        c.iupdate(inode);
-        c.iunlock(inode);
+        inode.lock();
+        inode.disk_inode.link_count -= 1;
+        inode.update();
+        inode.release();
     }
 
     // update directory
     {
-        var name: [c.DIRSIZ]u8 = undefined;
-        const directory = c.nameiparent(&new, &name) orelse return LinkErrors.FailedGetParentDir;
+        var name: []const u8 = undefined;
+        const directory_inode = Inode.resolvePathParent(new[0..new_length], &name) orelse return LinkErrors.FailedGetParentDir;
 
-        c.ilock(directory);
-        defer c.iunlockput(directory);
+        directory_inode.lock();
+        defer directory_inode.releasePut();
 
-        if (directory.*.dev != inode.*.dev) return LinkErrors.NotSameDevice;
+        if (directory_inode.filesystem_device != inode.filesystem_device) return LinkErrors.NotSameDevice;
 
-        const result = c.dirlink(directory, &name, inode.*.inum);
-        if (result < 0) return LinkErrors.FailedUpdateNewParDir;
+        const directory = Directory.init(directory_inode);
+        directory.linkEntry(name, inode.inode_number) catch return LinkErrors.FailedUpdateNewParDir;
     }
-}
-
-fn isDirectoryEmpty(directory: *c.struct_inode) bool {
-    const directoryOffset = @sizeOf(c.struct_dirent);
-    var index: usize = 2; // skip past . and ..
-    var directoryEntitiy: c.struct_dirent = undefined;
-
-    while (index * directoryOffset < directory.*.size) : (index += 1) {
-        const readBytes = c.readi(directory, 0, @intFromPtr(&directoryEntitiy), @intCast(index * directoryOffset), directoryOffset);
-        if (readBytes != directoryOffset) {
-            @panic("isDirectoryEmpty: readi");
-        }
-
-        if (directoryEntitiy.inum != 0) {
-            return false;
-        }
-    }
-
-    return true;
 }
 
 pub fn sys_unlink() u64 {
@@ -195,73 +162,80 @@ pub fn sys_unlink() u64 {
 const UnlinkErrors = error{ FailedGetPath, FailedGetParentDir, IsDot, IsDotDot, FailedDirLookup, DirectoryNotEmpty };
 
 pub fn unlink() UnlinkErrors!void {
-    var path: [c.MAXPATH]u8 = undefined;
-    _ = sysargs.getString(.a0, &path) catch return UnlinkErrors.FailedGetPath;
+    var path: [Inode.max_path_size]u8 = undefined;
+    const path_length = sysargs.getString(.a0, &path) catch return UnlinkErrors.FailedGetPath;
 
-    c.begin_op();
-    defer c.end_op();
+    fslog.beginOperation();
+    defer fslog.endOperation();
 
-    var name: [c.DIRSIZ]u8 = undefined;
-    const directory = c.nameiparent(&path, &name) orelse return UnlinkErrors.FailedGetParentDir;
+    var name: []const u8 = undefined;
+    const directory_inode = Inode.resolvePathParent(path[0..path_length], &name) orelse return UnlinkErrors.FailedGetParentDir;
 
-    c.ilock(directory);
-    defer c.iunlockput(directory);
+    directory_inode.lock();
+    defer directory_inode.releasePut();
 
-    if (c.namecmp(&name, ".") == 0) return UnlinkErrors.IsDot;
-    if (c.namecmp(&name, "..") == 0) return UnlinkErrors.IsDotDot;
+    if (std.mem.eql(u8, name, ".")) return UnlinkErrors.IsDot;
+    if (std.mem.eql(u8, name, "..")) return UnlinkErrors.IsDotDot;
 
-    var offset: c.uint = undefined;
-    const inode = c.dirlookup(directory, &name, &offset) orelse return UnlinkErrors.FailedDirLookup;
+    const directory = Directory.init(directory_inode);
 
-    c.ilock(inode);
-    defer c.iunlockput(inode);
+    var offset: u32 = undefined;
+    const inode = directory.lookupChild(name, &offset) orelse return UnlinkErrors.FailedDirLookup;
 
-    if (inode.*.nlink < 1) {
+    inode.lock();
+    defer inode.releasePut();
+
+    if (inode.disk_inode.link_count < 1) {
         @panic("unlink: nlink < 1");
     }
-    if (inode.*.type == c.T_DIR and !isDirectoryEmpty(inode)) return UnlinkErrors.DirectoryNotEmpty;
+
+    if (inode.disk_inode.type == .directory) {
+        const unlink_director = Directory.init(inode);
+        if (!unlink_director.isEmpty()) return UnlinkErrors.DirectoryNotEmpty;
+    }
 
     // remove directory entry
     {
-        var directoryEntity = std.mem.zeroes(c.struct_dirent);
-        const writtenBytes = c.writei(directory, 0, @intFromPtr(&directoryEntity), offset, @sizeOf(c.struct_dirent));
-        if (writtenBytes != @sizeOf(c.struct_dirent)) {
+        var directoryEntity = Directory.DirectoryEntry{};
+        const writtenBytes = directory_inode.write(.kernel, @intFromPtr(&directoryEntity), offset, Directory.entry_size);
+        if (writtenBytes != Directory.entry_size) {
             @panic("unlink: writei");
         }
     }
 
-    if (inode.*.type == c.T_DIR) {
-        directory.*.nlink -= 1;
-        c.iupdate(directory);
+    if (inode.disk_inode.type == .directory) {
+        directory_inode.disk_inode.link_count -= 1;
+        directory_inode.update();
     }
 
-    inode.*.nlink -= 1;
-    c.iupdate(inode);
+    inode.disk_inode.link_count -= 1;
+    inode.update();
 }
-
 
 const CreateErrors = error{ FailedGetParentDir, PathExistsWithWrongType, FailedAllocateInode, FailedCreateDot, FailedCreateDotDot, FailedLinkParentDir };
 
-fn create(path: []u8, kind: Inode.Kind, device: Device.ID) CreateErrors!*c.struct_inode {
-    var name: [c.DIRSIZ]u8 = undefined;
-    const directory = c.nameiparent(path.ptr, &name) orelse return CreateErrors.FailedGetParentDir;
+fn create(path: []const u8, kind: Inode.Kind, device: Device.ID) CreateErrors!*Inode {
+    var name: []const u8 = undefined;
+    const parent_inode = Inode.resolvePathParent(path, &name) orelse return CreateErrors.FailedGetParentDir;
 
-    c.ilock(directory);
-    defer c.iunlockput(directory);
+    parent_inode.lock();
+    defer parent_inode.releasePut();
 
-    if (c.dirlookup(directory, &name, 0)) |inode| {
-        c.ilock(inode);
-        errdefer c.iunlockput(inode);
+    const parent_directory = Directory.init(parent_inode);
+
+    if (parent_directory.lookupChild(name, null)) |inode| {
+        inode.lock();
+        errdefer inode.releasePut();
 
         // already exists
-        if (kind == .File and (inode.*.type == c.T_FILE or inode.*.type == c.T_DEVICE)) {
+        if (kind == .File and (inode.disk_inode.type == .file or inode.disk_inode.type == .device)) {
             return inode;
         }
 
         return CreateErrors.PathExistsWithWrongType;
     }
 
-    const inode = c.ialloc(directory.*.dev, kind.cShort()) orelse return CreateErrors.FailedAllocateInode;
+    const inode = c.ialloc(parent_inode.*.dev, kind.cShort()) orelse return CreateErrors.FailedAllocateInode;
 
     c.ilock(inode);
     errdefer {
@@ -281,13 +255,13 @@ fn create(path: []u8, kind: Inode.Kind, device: Device.ID) CreateErrors!*c.struc
         var dotdot = [_:0]u8{ '.', '.' };
 
         if (c.dirlink(inode, &dot, inode.*.inum) < 0) return CreateErrors.FailedCreateDot;
-        if (c.dirlink(inode, &dotdot, directory.*.inum) < 0) return CreateErrors.FailedCreateDotDot;
+        if (c.dirlink(inode, &dotdot, parent_inode.*.inum) < 0) return CreateErrors.FailedCreateDotDot;
     }
 
-    if (c.dirlink(directory, &name, inode.*.inum) < 0) return CreateErrors.FailedLinkParentDir;
+    if (c.dirlink(parent_inode, &name, inode.*.inum) < 0) return CreateErrors.FailedLinkParentDir;
     if (kind == .Directory) {
-        directory.*.nlink += 1; // for ".."
-        c.iupdate(directory);
+        parent_inode.*.nlink += 1; // for ".."
+        c.iupdate(parent_inode);
     }
 
     return inode;

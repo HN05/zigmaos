@@ -101,7 +101,7 @@ fn readSuperBlock(device: Device.ID, superBlockDestination: *SuperBlock) void {
     defer buffer.release();
 
     @memmove(
-        std.mem.asBytes(superBlockDestination.*),
+        std.mem.asBytes(superBlockDestination),
         buffer.data[0..@sizeOf(SuperBlock)],
     );
 }

@@ -3,26 +3,27 @@ const std = @import("std");
 
 const Directory = @This();
 
+pub const max_entry_name_length = 14;
+pub const entry_size = @sizeOf(DirectoryEntry);
+
 inode: *Inode,
 
 // Directory is a file containing a sequence of dirent structures.
 pub const DirectoryEntry = extern struct {
-    inode_number: u16,
-    name_length: u8,
-    name_buffer: [max_name_length]u8,
+    inode_number: u16 = 0,
+    name_length: u8 = 0,
+    name_buffer: [max_name_length]u8 = undefined,
 
-    pub const max_name_length = 14;
+    pub const max_name_length = max_entry_name_length;
 
-    pub fn nameSlice(entry: DirectoryEntry) []u8 {
+    pub fn nameSlice(entry: *const DirectoryEntry) []u8 {
         return entry.name_buffer[0..entry.name_length];
     }
 
-    pub fn matchesName(entry: DirectoryEntry, name: []u8) bool {
+    pub fn matchesName(entry: *const DirectoryEntry, name: []u8) bool {
         return std.mem.eql(u8, name, entry.nameSlice());
     }
 };
-
-const entry_size = @sizeOf(DirectoryEntry);
 
 
 pub fn init(inode: *Inode) Directory {
@@ -59,14 +60,14 @@ pub fn lookupChild(directory: *Directory, name: []const u8, entry_offset: ?*u32)
 pub fn linkEntry(directory: Directory, name: []const u8, inode_number: u32) !void {
     if (name.len > DirectoryEntry.max_name_length) return error.NameToLong;
 
-  // Check that name is not present.
+    // Check that name is not present.
     const existing_inode = directory.lookupChild(name, null);
     if (existing_inode) |inode| {
         inode.put();
         return error.AlreadyExists;
     }
 
-  // Look for an empty dirent.
+    // Look for an empty dirent.
     var current_offset = 0;
     var entry: DirectoryEntry = undefined;
     while (current_offset < directory.inode.disk_inode.size) : (current_offset += entry_size) {
@@ -82,4 +83,23 @@ pub fn linkEntry(directory: Directory, name: []const u8, inode_number: u32) !voi
 
     const written_bytes = try directory.inode.write(.kernel, @intFromPtr(&entry), current_offset, entry_size);
     if (written_bytes != entry_size) return error.WriteMalformed;
+}
+
+pub fn isEmpty(directory: Directory) bool {
+    const directory_offset = @sizeOf(DirectoryEntry);
+    var index: usize = 2; // skip past . and ..
+    var directory_entry: DirectoryEntry = undefined;
+
+    while (index * directory_offset < directory.inode.disk_inode.size) : (index += 1) {
+        const read_bytes = directory.inode.read(.kernel, @intFromPtr(&directory_entry), @intCast(index * directory_offset), directory_offset) catch @panic("can't read directory");
+        if (read_bytes != directory_offset) {
+            @panic("isDirectoryEmpty: readi");
+        }
+
+        if (directory_entry.inode_number != 0) {
+            return false;
+        }
+    }
+
+    return true;
 }
