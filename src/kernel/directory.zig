@@ -35,7 +35,7 @@ pub fn init(inode: *Inode) Directory {
 
 // Look for a directory entry in a directory.
 // If found, set *poff to byte offset of entry.
-pub fn lookupChild(directory: *Directory, name: []u8, entry_offset: ?*u32) ?*Inode {
+pub fn lookupChild(directory: *Directory, name: []const u8, entry_offset: ?*u32) ?*Inode {
     var current_offset = 0;
     var entry: DirectoryEntry = undefined;
     while (current_offset < directory.inode.disk_inode.size) : (current_offset += entry_size) {
@@ -56,7 +56,7 @@ pub fn lookupChild(directory: *Directory, name: []u8, entry_offset: ?*u32) ?*Ino
 }
 
 // Write a new directory entry (name, inum) into the directory dp.
-pub fn linkEntry(directory: Directory, name: []u8, inode_number: u32) !void {
+pub fn linkEntry(directory: Directory, name: []const u8, inode_number: u32) !void {
     if (name.len > DirectoryEntry.max_name_length) return error.NameToLong;
 
   // Check that name is not present.

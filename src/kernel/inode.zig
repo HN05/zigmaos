@@ -8,6 +8,8 @@ const std = @import("std");
 const log = @import("log.zig");
 const ad = @import("address.zig");
 const mem = @import("memory.zig");
+const Process = @import("process.zig");
+const Directory = @import("directory.zig");
 
 // Inodes.
 //
@@ -79,6 +81,8 @@ const mem = @import("memory.zig");
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
 
 const Inode = @This();
+
+pub const root_inode_number = 1; // root i-number
 
 pub const direct_pointer_count = 12;
 pub const indirect_pointer_block_index = direct_pointer_count;
@@ -168,7 +172,7 @@ pub fn update(inode: *Inode) void {
 // Find the inode with number inum on device dev
 // and return the in-memory copy. Does not lock
 // the inode and does not read it from disk.
-fn get(device: Device, inode_number: u32) *Inode {
+fn get(device: Device.ID, inode_number: u32) *Inode {
     inode_table.lock.acquire();
     defer inode_table.lock.release();
 
@@ -421,97 +425,88 @@ pub fn write(inode: *Inode, address_kind: ad.AddressKind, source: usize, offset:
     return bytes_written;
 }
 
+// Paths
 
+// Copy the next path element from path into name.
+// Return a pointer to the element following the copied one.
+// The returned path has no leading slashes,
+// so the caller can check path.len == 0 to see if the name is the last one.
+// If no name to remove, return null.
 //
-// // Paths
+// Examples:
+//   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
+//   skipelem("///a//bb", name) = "bb", setting name = "a"
+//   skipelem("a", name) = "", setting name = "a"
+//   skipelem("", name) = skipelem("////", name) = 0
 //
-// // Copy the next path element from path into name.
-// // Return a pointer to the element following the copied one.
-// // The returned path has no leading slashes,
-// // so the caller can check *path=='\0' to see if the name is the last one.
-// // If no name to remove, return 0.
-// //
-// // Examples:
-// //   skipelem("a/bb/c", name) = "bb/c", setting name = "a"
-// //   skipelem("///a//bb", name) = "bb", setting name = "a"
-// //   skipelem("a", name) = "", setting name = "a"
-// //   skipelem("", name) = skipelem("////", name) = 0
-// //
-// static char*
-// skipelem(char *path, char *name)
-// {
-//   char *s;
-//   int len;
-//
-//   while(*path == '/')
-//     path++;
-//   if(*path == 0)
-//     return 0;
-//   s = path;
-//   while(*path != '/' && *path != 0)
-//     path++;
-//   len = path - s;
-//   if(len >= DIRSIZ)
-//     memmove(name, s, DIRSIZ);
-//   else {
-//     memmove(name, s, len);
-//     name[len] = 0;
-//   }
-//   while(*path == '/')
-//     path++;
-//   return path;
-// }
-//
-// // Look up and return the inode for a path name.
-// // If parent != 0, return the inode for the parent and copy the final
-// // path element into name, which must have room for DIRSIZ bytes.
-// // Must be called inside a transaction since it calls iput().
-// static struct inode*
-// namex(char *path, int nameiparent, char *name)
-// {
-//   struct inode *ip, *next;
-//
-//   if(*path == '/')
-//     ip = iget(ROOTDEV, ROOTINO);
-//   else
-//     ip = idup(myproc()->cwd);
-//
-//   while((path = skipelem(path, name)) != 0){
-//     ilock(ip);
-//     if(ip->type != T_DIR){
-//       iunlockput(ip);
-//       return 0;
-//     }
-//     if(nameiparent && *path == '\0'){
-//       // Stop one level early.
-//       iunlock(ip);
-//       return ip;
-//     }
-//     if((next = dirlookup(ip, name, 0)) == 0){
-//       iunlockput(ip);
-//       return 0;
-//     }
-//     iunlockput(ip);
-//     ip = next;
-//   }
-//   if(nameiparent){
-//     iput(ip);
-//     return 0;
-//   }
-//   return ip;
-// }
-//
-// struct inode*
-// namei(char *path)
-// {
-//   char name[DIRSIZ];
-//   return namex(path, 0, name);
-// }
-//
-// struct inode*
-// nameiparent(char *path, char *name)
-// {
-//   return namex(path, 1, name);
-// }
-//
+fn skipPathElement(path: []const u8, name: *[]u8) ?[]const u8 {
+    // Skip leading slashes.
+    const start = std.mem.findNone(u8, path, "/") orelse return null;
 
+    const first_slash_index = std.mem.findScalar(u8, path[start..], '/') orelse {
+        // no slashes after name
+        name.* = path[start..];
+        return "";
+    };
+
+    const name_end = start + first_slash_index;
+    name.* = path[start..name_end];
+
+    const non_slash_index = std.mem.findNone(u8, path[name_end + 1 ..], "/") orelse return "";
+    const path_start = name_end + 1 + non_slash_index;
+
+    return path[path_start..];
+}
+
+// Look up and return the inode for a path name.
+// If returnParent, return the inode for the parent and copy the final
+// path element into name, which must have room for DIRSIZ bytes.
+// Must be called inside a transaction since it calls iput().
+fn resolvePathHelper(path: []const u8, returnParent: bool, name: *[]u8) ?*Inode {
+    if (path.len == 0) return null;
+
+    var current_inode = if (path[0] == '/') get(.root_fs_device, root_inode_number) else duplicate(Process.getCurrentForce().currentWorkingDirectory);
+    var possible_path: ?[]const u8 = skipPathElement(path, name);
+
+    // loop updates name value on each iteration
+    while (possible_path) |current_path| : (possible_path = skipPathElement(current_path, name)) {
+        current_inode = next_inode: {
+            var put_inode = true;
+
+            current_inode.lock();
+            defer { 
+                current_inode.release();
+                if (put_inode) current_inode.put();
+            }
+
+            if (current_inode.disk_inode.type != .directory) return null;
+
+            if (returnParent and current_path.len == 0) {
+                // don't put here
+                put_inode = false;
+                return current_inode;
+            }
+
+            const directory = Directory.init(current_inode);
+            break :next_inode directory.lookupChild(name.*, null) orelse return null;
+        };
+    }
+
+    if (returnParent) {
+        current_inode.put();
+        return null;
+    }
+
+    return current_inode;
+}
+
+
+pub fn resolvePath(path: []const u8) ?*Inode {
+    var name: [Directory.DirectoryEntry.max_name_length]u8 = undefined;
+    return resolvePathHelper(path, false, name[0..]);
+}
+
+pub fn resolvePathParent(path: []const u8) ?*Inode {
+    var name: [Directory.DirectoryEntry.max_name_length]u8 = undefined;
+    return resolvePathHelper(path, true, name[0..]);
+}
