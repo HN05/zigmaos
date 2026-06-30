@@ -260,9 +260,9 @@ pub fn createPagetable(process: *Process) !ad.PageTablePtr {
 // Free a process's page table, and free the
 // physical memory it refers to.
 pub fn freePageTable(pageTable: ad.PageTablePtr, size: usize) void {
-    errdefer mem.uvmUnmap(pageTable, ml.trampoline_virtual_address, 1, false);
-    errdefer mem.uvmUnmap(pageTable, ml.trapframe_virtual_address, 1, false);
-    errdefer mem.uvmFree(pageTable, size);
+    mem.uvmUnmap(pageTable, ml.trampoline_virtual_address, 1, false);
+    mem.uvmUnmap(pageTable, ml.trapframe_virtual_address, 1, false);
+    mem.uvmFree(pageTable, size);
 }
 
 // a user program that calls exec("/init")
@@ -449,7 +449,7 @@ pub fn wait(exit_status_destination: ?ad.UserAddress) !u32 {
     const current_process = getCurrent() orelse return error.CouldNotGetCurrent;
 
     waitLock.acquire();
-    errdefer waitLock.release();
+    defer waitLock.release();
 
     while (true) {
         // Scan through table looking for exited children.
