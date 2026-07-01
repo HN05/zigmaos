@@ -1387,6 +1387,7 @@ linktest(char *s)
   }
 }
 
+#define ZIG_DIRSIZ 27
 // test concurrent create/link/unlink of the same file
 void
 concreate(char *s)
@@ -1395,9 +1396,11 @@ concreate(char *s)
   char file[3];
   int i, pid, n, fd;
   char fa[N];
-  struct {
-    ushort inum;
-    char name[DIRSIZ];
+
+  struct zig_dirent {
+    uint inum;
+    uchar name_length;
+    char name[ZIG_DIRSIZ];
   } de;
 
   file[0] = 'C';
@@ -1782,45 +1785,63 @@ fourteen(char *s)
 {
   int fd;
 
-  // DIRSIZ is 14.
+  // This kernel uses 27-byte directory names and rejects longer names.
+  char name27[] = "123456789012345678901234567";   // 27 chars
+  char name28[] = "1234567890123456789012345678";  // 28 chars
 
-  if(mkdir("12345678901234") != 0){
-    printf("%s: mkdir 12345678901234 failed\n", s);
+  if(mkdir(name27) != 0){
+    printf("%s: mkdir 27-char name failed\n", s);
     exit(1);
   }
-  if(mkdir("12345678901234/123456789012345") != 0){
-    printf("%s: mkdir 12345678901234/123456789012345 failed\n", s);
+
+  if(mkdir(name28) == 0){
+    printf("%s: mkdir 28-char name succeeded!\n", s);
     exit(1);
   }
-  fd = open("123456789012345/123456789012345/123456789012345", O_CREATE);
+
+  char path[128];
+
+  strcpy(path, name27);
+  strcpy(path + strlen(path), "/");
+  strcpy(path + strlen(path), name27);
+
+  if(mkdir(path) != 0){
+    printf("%s: mkdir 27/27 failed\n", s);
+    exit(1);
+  }
+
+  strcpy(path + strlen(path), "/");
+  strcpy(path + strlen(path), name27);
+
+  fd = open(path, O_CREATE);
   if(fd < 0){
-    printf("%s: create 123456789012345/123456789012345/123456789012345 failed\n", s);
+    printf("%s: create 27/27/27 failed\n", s);
     exit(1);
   }
   close(fd);
-  fd = open("12345678901234/12345678901234/12345678901234", 0);
+
+  fd = open(path, 0);
   if(fd < 0){
-    printf("%s: open 12345678901234/12345678901234/12345678901234 failed\n", s);
+    printf("%s: open 27/27/27 failed\n", s);
     exit(1);
   }
   close(fd);
 
-  if(mkdir("12345678901234/12345678901234") == 0){
-    printf("%s: mkdir 12345678901234/12345678901234 succeeded!\n", s);
-    exit(1);
-  }
-  if(mkdir("123456789012345/12345678901234") == 0){
-    printf("%s: mkdir 12345678901234/123456789012345 succeeded!\n", s);
+  // Same path should not be creatable as a directory now.
+  if(mkdir(path) == 0){
+    printf("%s: mkdir existing 27/27/27 succeeded!\n", s);
     exit(1);
   }
 
-  // clean up
-  unlink("123456789012345/12345678901234");
-  unlink("12345678901234/12345678901234");
-  unlink("12345678901234/12345678901234/12345678901234");
-  unlink("123456789012345/123456789012345/123456789012345");
-  unlink("12345678901234/123456789012345");
-  unlink("12345678901234");
+  unlink(path);
+
+  path[0] = '\0';
+  strcpy(path, name27);
+  strcpy(path + strlen(path), "/");
+  strcpy(path + strlen(path), name27);
+  unlink(path);
+
+  unlink(name27);
 }
 
 void

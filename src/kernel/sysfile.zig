@@ -24,7 +24,6 @@ const Directory = @import("directory.zig");
 const fs = @import("filesystem.zig");
 const Pipe = @import("pipe.zig");
 const ad = @import("address.zig");
-const print = @import("klog.zig").print;
 
 pub fn sys_dup() u64 {
     const file = sysargs.getFile(.a0) catch |err| {
@@ -452,7 +451,6 @@ pub fn chdir() ChdirErrors!void {
 
 pub fn sys_exec() u64 {
     return exec() catch |err| {
-        print("get exec error: {s}", .{@errorName(err)});
         log.print("could not exec: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };

@@ -83,7 +83,7 @@ fn installTransaction(is_recovering: bool) void {
         @memmove(&destination_buffer.data, &log_buffer.data);
 
         destination_buffer.write(); // write destination to disk
-        if (is_recovering) {
+        if (!is_recovering) {
             destination_buffer.unpin();
         }
     }
