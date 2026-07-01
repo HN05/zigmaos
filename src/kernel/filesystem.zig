@@ -55,7 +55,7 @@ const BlockBitmap = struct {
     }
 
     pub fn markFree(self: BlockBitmap, bit_index: usize) void {
-        if (isUsed(self, bit_index)) @panic("trying to free used block");
+        if (!isUsed(self, bit_index)) @panic("trying to free unused block");
         const byte_index = bit_index / 8;
         const bit_offset: u3 = @intCast(bit_index % 8);
         const mask: u8 = @as(u8, 1) << bit_offset;

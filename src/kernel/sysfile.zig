@@ -344,7 +344,6 @@ pub fn open() !usize {
     const file = File.alloc() orelse return OpenErrors.FailedAllocFile;
     errdefer file.close();
 
-    const fd = try sysargs.fileDescriptorAllocate(file);
 
     if (inode.disk_inode.type == .device) {
         file.data = .{ .device = .{
@@ -364,7 +363,7 @@ pub fn open() !usize {
         inode.truncate();
     }
 
-    return fd;
+    return sysargs.fileDescriptorAllocate(file);
 }
 
 pub fn sys_mkdir() u64 {
