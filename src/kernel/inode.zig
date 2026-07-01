@@ -358,7 +358,7 @@ pub fn getStatus(inode: *Inode) fs.FileStatus {
 // Read data from inode.
 // Caller must hold ip->lock.
 pub fn read(inode: *Inode, destination_address: ad.AnyAddress, offset: u32, count: u32) !u32 {
-    if (offset > inode.disk_inode.size) return error.OutOfInodeRange;
+    if (offset > inode.disk_inode.size) return 0;
     if (@addWithOverflow(offset, count)[1] == 1) return error.OffsetOverflows;
 
     var bytes_to_read = count;
