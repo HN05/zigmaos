@@ -294,7 +294,7 @@ pub fn getBlockAddress(inode: *Inode, block_number: u32) !u32 {
         return address;
     }
 
-    const block_number_indirect = block_number - indirect_pointer_block_index;
+    const block_number_indirect = block_number - direct_pointer_count;
     if (block_number_indirect >= indirect_pointer_count) @panic("block number out of range");
 
     // Load indirect block, allocating if necessary.
@@ -302,17 +302,17 @@ pub fn getBlockAddress(inode: *Inode, block_number: u32) !u32 {
     if (pointer_block == 0) {
         // allocate block
         pointer_block = try fs.blockAllocate(inode.filesystem_device);
-        inode.disk_inode.addrs[block_number] = pointer_block;
+        inode.disk_inode.addrs[indirect_pointer_block_index] = pointer_block;
     }
     const buffer = Buffer.read(inode.filesystem_device, pointer_block);
     defer buffer.release();
 
     const addresses = buffer.castData([indirect_pointer_count]u32);
-    var address = addresses[block_number];
+    var address = addresses[block_number_indirect];
     if (address == 0) {
         // alloc block
         address = try fs.blockAllocate(inode.filesystem_device);
-        addresses[address] = address;
+        addresses[block_number_indirect] = address;
         log.write(buffer);
     }
     return address;

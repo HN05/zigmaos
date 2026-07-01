@@ -142,15 +142,15 @@ pub fn release(buffer: *Buffer) void {
 }
 
 pub fn pin(buffer: *Buffer) void {
-    buffer.lock.acquire();
-    defer buffer.lock.release();
+    cache.lock.acquire();
+    defer cache.lock.release();
 
     buffer.reference_count += 1;
 }
 
 pub fn unpin(buffer: *Buffer) void {
-    buffer.lock.acquire();
-    defer buffer.lock.release();
+    cache.lock.acquire();
+    defer cache.lock.release();
 
     buffer.reference_count -= 1;
 }

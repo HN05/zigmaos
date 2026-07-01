@@ -113,7 +113,7 @@ pub fn close(file: *File) void {
             log.beginOperation();
             defer log.endOperation();
 
-            file.getInode().put();
+            closed_file.getInode().put();
         },
         .none => return,
     }
