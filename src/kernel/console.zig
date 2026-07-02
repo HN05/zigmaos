@@ -96,7 +96,7 @@ fn read(destination_address: ad.AnyAddress, length: u32) Device.ReadErrors!u32 {
             if (process.isKilled()) {
                 return Device.ReadErrors.ProcessKilled;
             }
-            inputBuffer.lock.sleepWithLock(&inputBuffer.readIndex);
+            inputBuffer.lock.sleepOn(&inputBuffer.readIndex);
         }
 
         character = inputBuffer.data[inputBuffer.readIndex % input_buf_size];

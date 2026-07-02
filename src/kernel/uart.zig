@@ -74,7 +74,7 @@ pub fn putCharacter(ch: u8) void {
     while (transmit_w == transmit_r + transmit_buf_size) {
         // buffer is full.
         // wait for uartstart() to open up space in the buffer.
-        transmit_lock.sleepWithLock(&transmit_r);
+        transmit_lock.sleepOn(&transmit_r);
     }
     transmit_buf[transmit_w % transmit_buf_size] = ch;
     transmit_w += 1;

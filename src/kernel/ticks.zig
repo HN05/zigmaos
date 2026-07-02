@@ -35,7 +35,7 @@ const Ticks = struct {
             if (execution.Process.isKilled(.getCurrentForce())) {
                 return error.ProcessIsKilled;
             }
-            self.lock.sleepWithLock(self);
+            self.lock.sleepOn(self);
         }
     }
 };

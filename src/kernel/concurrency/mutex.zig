@@ -28,12 +28,12 @@ const Reference = union(enum) {
 };
 
 pub const Mutex = union(enum) {
-    backing: Backing,
+    direct: Backing,
     reference: Reference,
 
     pub fn init(kind: LockType, name: []const u8) Mutex {
         return .{
-            .backing = switch (kind) {
+            .direct = switch (kind) {
                 .spin => .{ .spin = .{ .name = name } },
                 .sleep => .{ .sleep = .{ .name = name } },
             },
@@ -46,7 +46,7 @@ pub const Mutex = union(enum) {
 
     fn switchCall(self: *Mutex, comptime method: []const u8, comptime Return: type) Return {
         return switch (self.*) {
-            .backing => |*backing| backing.switchCall(method, Return),
+            .direct => |*backing| backing.switchCall(method, Return),
             .reference => |*reference| reference.switchCall(method, Return),
         };
     }
@@ -65,7 +65,7 @@ pub const Mutex = union(enum) {
 
     // Atomically release lock and sleep on chan.
     // Reacquires lock when awakened.
-    pub fn sleepWithLock(self: *Mutex, channel: *anyopaque) void {
+    pub fn sleepOn(self: *Mutex, channel: *anyopaque) void {
         execution.scheduler.sleepWithLock(self, channel);
     }
 };

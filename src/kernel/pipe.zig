@@ -77,7 +77,7 @@ pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
         if (pipe.write_count == pipe.read_count + pipe_size) {
             // pipewrite full
             execution.scheduler.wakeup(&pipe.read_count);
-            pipe.lock.sleepWithLock(&pipe.write_count);
+            pipe.lock.sleepOn(&pipe.write_count);
         } else {
             const available_space = pipe_size - (pipe.write_count - pipe.read_count);
             const bytes_to_write = @min(available_space, write_count - bytes_written);
@@ -108,7 +108,7 @@ pub fn read(pipe: *Pipe, address: ad.UserAddress, read_count: u32) !u32 {
     while (pipe.read_count == pipe.write_count and pipe.write_is_open) {
         // wait for data to enter pipe
         if (process.isKilled()) return error.ProcessKilled;
-        pipe.lock.sleepWithLock(&pipe.read_count);
+        pipe.lock.sleepOn(&pipe.read_count);
     }
 
     var bytes_read: u32 = 0;

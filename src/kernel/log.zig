@@ -127,7 +127,7 @@ pub fn beginOperation() void {
         const possible_log_size = log.header.length + (log.outstanding + 1) * common.param.max_num_operation_blocks;
 
         if (log.is_commiting or possible_log_size > common.param.log_size) {
-            log.lock.sleepWithLock(&log);
+            log.lock.sleepOn(&log);
         } else {
             log.outstanding += 1;
             break;
