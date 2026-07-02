@@ -3,7 +3,6 @@ const log_root = @import("klog.zig");
 const riscv = @import("common").riscv;
 const Kalloc = @import("kalloc.zig");
 const plic = @import("plic.zig");
-const console = @import("console.zig");
 const trap = @import("trap.zig");
 const memory = @import("memory.zig");
 const drivers = @import("drivers.zig");
@@ -16,7 +15,7 @@ var started = std.atomic.Value(bool).init(false);
 
 pub fn kmain() void {
     if (execution.Cpu.getCurrentId() == 0) {
-        console.init();
+        drivers.console.init();
         log.info("xv6 kernel is booting", .{});
         Kalloc.kinit(); // set up allocator (zig)
         memory.kernelMemoryInit(); // create kernel page table

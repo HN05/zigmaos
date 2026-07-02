@@ -1,10 +1,10 @@
 // Much of this code comes from https://github.com/binarycraft007/xv6-riscv-zig
 
-const memlayout = @import("memlayout.zig");
-const log_root = @import("klog.zig");
+const memlayout = @import("../memlayout.zig");
+const log_root = @import("../klog.zig");
 const console = @import("console.zig");
-const execution = @import("execution.zig");
-const conc = @import("concurrency.zig");
+const execution = @import("../execution.zig");
+const conc = @import("../concurrency.zig");
 
 /// the UART control registers.
 /// some have different meanings for

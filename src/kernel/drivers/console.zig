@@ -11,11 +11,11 @@
 
 const std = @import("std");
 const uart = @import("uart.zig");
-const mem = @import("memory.zig");
-const Device = @import("device.zig");
-const ad = @import("address.zig");
-const execution = @import("execution.zig");
-const conc = @import("concurrency.zig");
+const mem = @import("../memory.zig");
+const Device = @import("../device.zig");
+const ad = @import("../address.zig");
+const execution = @import("../execution.zig");
+const conc = @import("../concurrency.zig");
 
 fn control(char: u8) u8 {
     return char - '@';

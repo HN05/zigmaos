@@ -2,7 +2,6 @@ const std = @import("std");
 const csr = @import("csr.zig");
 const riscv = @import("common").riscv;
 const memlayout = @import("memlayout.zig");
-const uart = @import("uart.zig");
 const print = @import("klog.zig").print;
 const plic = @import("plic.zig");
 const ticks = @import("ticks.zig").ticks;
@@ -179,7 +178,7 @@ fn handleDeviceInterrupt(scause: csr.Scause) void {
             const irq = plic.claim();
             switch (irq) {
                 .null => return,
-                .uart => uart.interrupt(),
+                .uart => drivers.uart.interrupt(),
                 .virtio => drivers.disk.interrupt(),
                 else => print("unexpected interrupt irq={d}\n", .{irq}),
             }

@@ -3,7 +3,8 @@ const mem = std.mem;
 const fmt = std.fmt;
 const common = @import("common");
 const Color = common.color.Color;
-const console = @import("console.zig");
+const drivers = @import("drivers.zig");
+const console = drivers.console;
 const conc = @import("concurrency.zig");
 
 var lock: conc.Mutex = .init(.spin, "klog");
