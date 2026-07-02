@@ -8,8 +8,8 @@ const std = @import("std");
 const log = @import("log.zig");
 const ad = @import("address.zig");
 const mem = @import("memory.zig");
-const Process = @import("process.zig");
 const Directory = @import("directory.zig");
+const execution = @import("execution.zig");
 
 // Inodes.
 //
@@ -252,8 +252,8 @@ pub fn put(inode: *Inode) void {
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
         inode.sleep_lock.acquire();
-        inode_table.lock.release();// inode has no links and no other references: truncate and free.
-        
+        inode_table.lock.release(); // inode has no links and no other references: truncate and free.
+
         // undo lock changes after updates
         defer {
             inode.sleep_lock.release();
@@ -470,7 +470,11 @@ fn skipPathElement(path: []const u8, name: *[]const u8) ?[]const u8 {
 fn resolvePathHelper(path: []const u8, returnParent: bool, name: *[]const u8) ?*Inode {
     if (path.len == 0) return null;
 
-    var current_inode = if (path[0] == '/') get(.root_fs_device, root_inode_number) else duplicate(Process.getCurrentForce().currentWorkingDirectory);
+    var current_inode = if (path[0] == '/')
+        get(.root_fs_device, root_inode_number)
+    else
+        duplicate(execution.Process.getCurrentForce().currentWorkingDirectory);
+
     var possible_path: ?[]const u8 = skipPathElement(path, name);
 
     // loop updates name value on each iteration

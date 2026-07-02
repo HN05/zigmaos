@@ -6,9 +6,9 @@ const SpinLock = @import("spinlock.zig");
 const common = @import("common");
 const log = @import("log.zig");
 const ad = @import("address.zig");
-const Process = @import("process.zig");
 const fs = @import("filesystem.zig");
 const mem = @import("memory.zig");
+const execution = @import("execution.zig");
 
 pub const FileType = enum {
     none,
@@ -133,7 +133,7 @@ pub fn getStatus(file: *const File, destination_address: ad.UserAddress) !void {
         status = inode.getStatus();
     }
 
-    const process = Process.getCurrentForce();
+    const process = execution.Process.getCurrentForce();
     try mem.copyOut(process.pageTable, destination_address, std.mem.asBytes(&status));
 }
 

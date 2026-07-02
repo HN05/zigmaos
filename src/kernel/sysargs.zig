@@ -4,7 +4,8 @@ const param = common.param;
 const log = @import("klog.zig");
 const mem = @import("memory.zig");
 const ad = @import("address.zig");
-const Process = @import("process.zig");
+const execution = @import("execution.zig");
+const Process = execution.Process;
 const File = @import("file.zig");
 
 const InputRegister = enum { a0, a1, a2, a3, a4, a5 };

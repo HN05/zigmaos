@@ -8,7 +8,8 @@ const Book = com.ringbuf.Book;
 const MagicBuf = com.ringbuf.MagicBuf;
 const Rb = com.ringbuf;
 const mem = @import("memory.zig");
-const Process = @import("process.zig");
+const execution = @import("execution.zig");
+const Process = execution.Process;
 const fslog = @import("log.zig");
 const ad = @import("address.zig");
 

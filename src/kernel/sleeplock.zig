@@ -1,8 +1,7 @@
 // Sleeping locks
 const std = @import("std");
 const SpinLock = @import("spinlock.zig");
-const Process = @import("process.zig");
-const scheduler = @import("scheduler.zig");
+const execution = @import("execution.zig");
 
 const SleepLock = @This();
 // Long-term locks for processes
@@ -23,7 +22,7 @@ pub fn acquire(self: *SleepLock) void {
     }
 
     self.isLocked = true;
-    self.pid = Process.getCurrentForce().pid_unsafe;
+    self.pid = execution.Process.getCurrentForce().pid_unsafe;
 }
 
 pub fn release(self: *SleepLock) void {
@@ -33,12 +32,12 @@ pub fn release(self: *SleepLock) void {
     self.isLocked = false;
     self.pid = null;
 
-    scheduler.wakeup(self);
+    execution.scheduler.wakeup(self);
 }
 
 pub fn isHolding(self: *SleepLock) bool {
     self.spinlock.acquire();
     defer self.spinlock.release();
 
-    return self.isLocked and (self.pid == Process.getCurrentForce().pid_unsafe);
+    return self.isLocked and (self.pid == execution.Process.getCurrentForce().pid_unsafe);
 }

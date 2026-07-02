@@ -5,7 +5,7 @@ const SpinLock = @import("spinlock.zig");
 const log_root = @import("klog.zig");
 const console = @import("console.zig");
 const interrupts = @import("interrupts.zig");
-const scheduler = @import("scheduler.zig");
+const execution = @import("execution.zig");
 
 /// the UART control registers.
 /// some have different meanings for
@@ -119,7 +119,7 @@ pub fn start() void {
         transmit_r += 1;
 
         // maybe uartputc() is waiting for space in the buffer.
-        scheduler.wakeup(&transmit_r);
+        execution.scheduler.wakeup(&transmit_r);
 
         writeReg(transmit_holding_register, character);
     }

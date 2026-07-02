@@ -18,12 +18,13 @@ const execFile = @import("exec.zig");
 const Inode = @import("inode.zig");
 const File = @import("file.zig");
 const Device = @import("device.zig");
-const Process = @import("process.zig");
 const fslog = @import("log.zig");
 const Directory = @import("directory.zig");
 const fs = @import("filesystem.zig");
 const Pipe = @import("pipe.zig");
 const ad = @import("address.zig");
+const execution = @import("execution.zig");
+const Process = execution.Process;
 
 pub fn sys_dup() u64 {
     const file = sysargs.getFile(.a0) catch |err| {

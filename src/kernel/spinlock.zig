@@ -2,9 +2,8 @@
 const std = @import("std");
 const Atomic = std.atomic.Value;
 const interrupts = @import("interrupts.zig");
-const Cpu = @import("cpu.zig");
-const Process = @import("process.zig");
-const scheduler = @import("scheduler.zig");
+const execution = @import("execution.zig");
+const Cpu = execution.Cpu;
 
 const SpinLock = @This();
 
@@ -42,5 +41,5 @@ pub fn isHolding(self: *const SpinLock) bool {
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
 pub fn sleep(self: *SpinLock, channel: *anyopaque) void {
-    scheduler.sleep(channel, self);
+    execution.scheduler.sleep(channel, self);
 }

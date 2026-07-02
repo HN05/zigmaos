@@ -26,7 +26,7 @@ const SpinLock = @import("spinlock.zig");
 const Device = @import("device.zig");
 const fs = @import("filesystem.zig");
 const Buffer = @import("buffer.zig");
-const scheduler = @import("scheduler.zig");
+const execution = @import("execution.zig");
 
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
@@ -152,7 +152,7 @@ pub fn endOperation() void {
             // begin_op() may be waiting for log space,
             // and decrementing log.outstanding has decreased
             // the amount of reserved space.
-            scheduler.wakeup(&log);
+            execution.scheduler.wakeup(&log);
         }
     }
     if (do_commit) {
@@ -162,7 +162,7 @@ pub fn endOperation() void {
         log.lock.acquire();
         defer log.lock.release();
         log.is_commiting = false;
-        scheduler.wakeup(&log);
+        execution.scheduler.wakeup(&log);
     }
 }
 

@@ -8,10 +8,9 @@ const plic = @import("plic.zig");
 const ticks = @import("ticks.zig").ticks;
 const ad = @import("address.zig");
 const interrupts = @import("interrupts.zig");
-const Cpu = @import("cpu.zig");
-const Process = @import("process.zig");
+const execution = @import("execution.zig");
+const Process = execution.Process;
 const syscall = @import("syscall.zig");
-const scheduler = @import("scheduler.zig");
 const drivers = @import("drivers.zig");
 
 extern const uservec: anyopaque;
@@ -74,7 +73,7 @@ export fn usertrap() void {
 
     // give up the CPU if this is a timer interrupt.
     if (scause == .supervisorSoftwareInterrupt) {
-        scheduler.yield();
+        execution.scheduler.yield();
     }
 
     usertrapret();
@@ -154,7 +153,7 @@ export fn kerneltrap() void {
     if (scause == .supervisorSoftwareInterrupt) {
         if (Process.getCurrent()) |process| {
             if (process.state_unsafe == .running) {
-                scheduler.yield();
+                execution.scheduler.yield();
             }
         }
     }
@@ -191,7 +190,7 @@ fn handleDeviceInterrupt(scause: csr.Scause) void {
         .supervisorSoftwareInterrupt => {
             // software interrupt from a machine-mode timer interrupt,
             // forwarded by timervec in kernelvec.S.
-            if (Cpu.getCurrentId() == 0) {
+            if (execution.Cpu.getCurrentId() == 0) {
                 ticks.incrementSafe();
             }
             // acknowledge the software interrupt by clearing

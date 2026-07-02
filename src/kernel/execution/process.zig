@@ -1,22 +1,22 @@
 const common = @import("common");
 const param = common.param;
 const Context = common.riscv.Context;
-const SpinLock = @import("spinlock.zig");
-const ad = @import("address.zig");
-const ml = @import("memlayout.zig");
-const alloc = @import("kalloc.zig");
-const mem = @import("memory.zig");
+const SpinLock = @import("../spinlock.zig");
+const ad = @import("../address.zig");
+const ml = @import("../memlayout.zig");
+const kalloc = @import("../kalloc.zig");
+const mem = @import("../memory.zig");
 const Cpu = @import("cpu.zig");
-const interrupts = @import("interrupts.zig");
+const interrupts = @import("../interrupts.zig");
 const std = @import("std");
-const ringbuf = @import("ringbuf.zig");
-const print = @import("klog.zig").print;
+const ringbuf = @import("../ringbuf.zig");
+const print = @import("../klog.zig").print;
 const scheduler = @import("scheduler.zig");
-const File = @import("file.zig");
-const Inode = @import("inode.zig");
-const trap = @import("trap.zig");
-const fs = @import("filesystem.zig");
-const log = @import("log.zig");
+const File = @import("../file.zig");
+const Inode = @import("../inode.zig");
+const trap = @import("../trap.zig");
+const fs = @import("../filesystem.zig");
+const log = @import("../log.zig");
 
 pub var processTable: [param.NPROC]Process = blk: {
     var table: [param.NPROC]Process = undefined;
@@ -45,7 +45,7 @@ pub fn mapKernelStacks(kernelPageTable: ad.PageTablePtr) void {
         inline for (0..ml.kernel_stack_page_count) |i| {
             const virtual_page_address = virtualAddress.add(i * ad.page_size);
 
-            const physical_page = alloc.allocPage() orelse @panic("could not map stacks: kalloc");
+            const physical_page = kalloc.allocPage() orelse @panic("could not map stacks: kalloc");
             mem.kernelVirtualMap(kernelPageTable, virtual_page_address, .fromPtr(physical_page), ad.page_size, .{ .write = true, .read = true }) catch @panic("could not map process kernel stack");
         }
     }
@@ -168,15 +168,15 @@ fn allocProcessId() u32 {
     return nextProcessId.fetchAdd(1, .monotonic);
 }
 
-fn allocFoundProcess(process: *Process) !void {
-    errdefer free(process);
+fn init(process: *Process) !void {
+    errdefer process.free();
     errdefer process.lock.release();
 
     process.pid_unsafe = allocProcessId();
     process.state_unsafe = .used;
 
     // Allocate a trapframe page.
-    const trap_page = alloc.allocPage() orelse return error.FailedMemAllocate;
+    const trap_page = kalloc.allocPage() orelse return error.FailedMemAllocate;
     process.trapFrame = @ptrCast(trap_page);
     process.allocatedTrapFrame = true;
 
@@ -186,20 +186,22 @@ fn allocFoundProcess(process: *Process) !void {
 
     // Set up new context to start executing at forkret,
     // which returns to user space.
-    process.context = .{};
-    process.context.ra = @intFromPtr(&forkReturn);
-    process.context.sp = process.kernelStackAddress.add(ml.kernel_stack_page_count * ad.page_size).toInt();
+    const sp = process.kernelStackAddress.add(ml.kernel_stack_page_count * ad.page_size);
+    process.context = .{
+        .ra = @intFromPtr(&forkReturn),
+        .sp = sp.toInt(),
+    };
 }
 
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
 // If there are no free procs, or a memory allocation fails, return 0.
-fn allocProcess() ?*Process {
+fn alloc() ?*Process {
     for (&processTable) |*process| {
         process.lock.acquire();
         if (process.state_unsafe == .unused) {
-            allocFoundProcess(process) catch return null;
+            process.init() catch return null;
             return process;
         }
         process.lock.release();
@@ -215,12 +217,12 @@ fn free(process: *Process) void {
         ringbuf.ringbuf_disown_all(process);
     }
     if (process.allocatedTrapFrame) {
-        alloc.freePage(process.trapFrame.asPagePointer()) catch @panic("could not free trapframe");
+        kalloc.freePage(process.trapFrame.asPagePointer()) catch @panic("could not free trapframe");
         process.allocatedTrapFrame = false;
     }
 
     if (process.allocatedPageTable) {
-        freePageTable(process.pageTable, process.size);
+        mem.freePageTable(process.pageTable, process.size);
         process.allocatedPageTable = false;
     }
     process.topFreeVirtualPage = ml.trapframe_virtual_address.sub(2 * ad.page_size);
@@ -257,14 +259,6 @@ pub fn createPagetable(process: *Process) !ad.PageTablePtr {
     return pageTable;
 }
 
-// Free a process's page table, and free the
-// physical memory it refers to.
-pub fn freePageTable(pageTable: ad.PageTablePtr, size: usize) void {
-    mem.uvmUnmap(pageTable, ml.trampoline_virtual_address, 1, false);
-    mem.uvmUnmap(pageTable, ml.trapframe_virtual_address, 1, false);
-    mem.uvmFree(pageTable, size);
-}
-
 // a user program that calls exec("/init")
 // assembled from ../user/initcode.S
 // od -t xC ../user/initcode
@@ -283,7 +277,7 @@ const initcode = @embedFile("initcode.bin");
 
 // Set up first user process.
 pub fn initFirstUser() void {
-    initialProcess = allocProcess() orelse @panic("could not find spot for init process");
+    initialProcess = alloc() orelse @panic("could not find spot for init process");
     defer initialProcess.lock.release();
 
     // allocate one user page and copy initcode's instructions
@@ -342,7 +336,7 @@ pub fn fork() !u32 {
 
     // set up child process
     {
-        child_process = allocProcess() orelse return error.CouldNotAllocateProcess;
+        child_process = alloc() orelse return error.CouldNotAllocateProcess;
         defer child_process.lock.release();
         errdefer child_process.free();
 
@@ -429,7 +423,7 @@ pub fn exit(status: i32) void {
         defer waitLock.release();
 
         // Give any children to init.
-        reparentChildren(current_process);
+        current_process.reparentChildren();
 
         // Parent might be sleeping in wait().
         scheduler.wakeup(current_process.parentProcess.?);
@@ -468,7 +462,7 @@ pub fn wait(exit_status_destination: ?ad.UserAddress) !u32 {
                     try mem.copyOut(current_process.pageTable, destination, std.mem.asBytes(&process.exit_status_unsafe));
                 }
                 const pid = process.pid_unsafe;
-                free(process);
+                process.free();
                 return pid;
             }
         }

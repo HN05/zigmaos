@@ -1,9 +1,9 @@
 const Cpu = @import("cpu.zig");
 const common = @import("common");
 const Context = common.riscv.Context;
-const interrupts = @import("interrupts.zig");
+const interrupts = @import("../interrupts.zig");
 const Process = @import("process.zig");
-const SpinLock = @import("spinlock.zig");
+const SpinLock = @import("../spinlock.zig");
 
 // from switchContext.S
 extern const switchContext: fn (*Context, *Context) void;
@@ -15,7 +15,7 @@ extern const switchContext: fn (*Context, *Context) void;
 //  - switchContext to start running that process.
 //  - eventually that process transfers control
 //    via switchContext back to the scheduler.
-pub fn schedulerLoop() void {
+pub fn loop() void {
     const cpu = Cpu.getCurrent();
     cpu.runningProcess = null;
 

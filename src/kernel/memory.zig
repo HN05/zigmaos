@@ -4,7 +4,7 @@ const alloc = @import("kalloc.zig");
 const ad = @import("address.zig");
 const ml = @import("memlayout.zig");
 const csr = @import("csr.zig");
-const Process = @import("process.zig");
+const execution = @import("execution.zig");
 
 var kernelPagetable: ad.PageTablePtr = undefined;
 
@@ -135,7 +135,7 @@ fn kernelMemoryMake() ad.PageTablePtr {
     kernelVirtualMap(table, ml.trampoline_virtual_address, ml.trampolinePhysicalAddress(), ad.page_size, .{ .read = true, .execute = true }) catch @panic("initing trampoline");
 
     // allocate and map a kernel stack for each process.
-    Process.mapKernelStacks(table);
+    execution.Process.mapKernelStacks(table);
 
     return table;
 }
@@ -387,7 +387,7 @@ pub fn copyOutTerminated(pgTable: ad.PageTablePtr, destVirtualAddress: ad.UserAd
 
 // Copy to either a user address, or kernel address,
 pub fn eitherCopyOut(address: ad.AnyAddress, source: []const u8) !void {
-    const process = try Process.getCurrentThrows();
+    const process = try execution.Process.getCurrentThrows();
 
     switch (address) {
         .user => |user_addr| {
@@ -401,7 +401,7 @@ pub fn eitherCopyOut(address: ad.AnyAddress, source: []const u8) !void {
 
 // Copy from either a user address, or kernel address,
 pub fn eitherCopyIn(address: ad.AnyAddress, destination: []u8) !void {
-    const process = try Process.getCurrentThrows();
+    const process = try execution.Process.getCurrentThrows();
 
     switch (address) {
         .user => |user_addr| {
@@ -411,4 +411,12 @@ pub fn eitherCopyIn(address: ad.AnyAddress, destination: []u8) !void {
             @memmove(destination, kern_addr.asPtr([*]u8));
         },
     }
+}
+
+// Free a process's page table, and free the
+// physical memory it refers to.
+pub fn freePageTable(pageTable: ad.PageTablePtr, size: usize) void {
+    uvmUnmap(pageTable, ml.trampoline_virtual_address, 1, false);
+    uvmUnmap(pageTable, ml.trapframe_virtual_address, 1, false);
+    uvmFree(pageTable, size);
 }

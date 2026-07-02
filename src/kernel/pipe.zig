@@ -1,9 +1,8 @@
 const SpinLock = @import("spinlock.zig");
 const File = @import("file.zig");
 const memalloc = @import("kalloc.zig");
-const scheduler = @import("scheduler.zig");
 const ad = @import("address.zig");
-const Process = @import("process.zig");
+const execution = @import("execution.zig");
 const mem = @import("memory.zig");
 
 const pipe_size = 512;
@@ -51,10 +50,10 @@ pub fn close(pipe: *Pipe, close_write: bool) void {
 
         if (close_write) {
             pipe.write_is_open = false;
-            scheduler.wakeup(&pipe.read_count);
+            execution.scheduler.wakeup(&pipe.read_count);
         } else {
             pipe.read_is_open = false;
-            scheduler.wakeup(&pipe.write_count);
+            execution.scheduler.wakeup(&pipe.write_count);
         }
         if (!pipe.read_is_open and !pipe.write_is_open) {
             free_pipe = true;
@@ -64,7 +63,7 @@ pub fn close(pipe: *Pipe, close_write: bool) void {
 }
 
 pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
-    const process = Process.getCurrentForce();
+    const process = execution.Process.getCurrentForce();
 
     pipe.lock.acquire();
     defer pipe.lock.release();
@@ -77,7 +76,7 @@ pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
 
         if (pipe.write_count == pipe.read_count + pipe_size) {
             // pipewrite full
-            scheduler.wakeup(&pipe.read_count);
+            execution.scheduler.wakeup(&pipe.read_count);
             pipe.lock.sleep(&pipe.write_count);
         } else {
             const available_space = pipe_size - (pipe.write_count - pipe.read_count);
@@ -94,13 +93,13 @@ pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
         }
     }
 
-    scheduler.wakeup(&pipe.read_count);
+    execution.scheduler.wakeup(&pipe.read_count);
 
     return bytes_written;
 }
 
 pub fn read(pipe: *Pipe, address: ad.UserAddress, read_count: u32) !u32 {
-    const process = Process.getCurrentForce();
+    const process = execution.Process.getCurrentForce();
 
     pipe.lock.acquire();
     defer pipe.lock.release();
@@ -130,7 +129,7 @@ pub fn read(pipe: *Pipe, address: ad.UserAddress, read_count: u32) !u32 {
         pipe.read_count += chunked_read_count;
     }
 
-    scheduler.wakeup(&pipe.write_count);
+    execution.scheduler.wakeup(&pipe.write_count);
 
     return bytes_read;
 }

@@ -4,10 +4,10 @@ const procsyscalls = @import("sysproc.zig");
 const filesyscalls = @import("sysfile.zig");
 const ringbuf = @import("ringbuf.zig");
 const SyscallNum = @import("syscallnum.zig").SyscallNum;
-const Process = @import("process.zig");
+const execution = @import("execution.zig");
 
 pub fn handler() void {
-    const process = Process.getCurrentForce();
+    const process = execution.Process.getCurrentForce();
     const num = process.trapFrame.a7;
 
     const syscallNum: SyscallNum = @enumFromInt(num);

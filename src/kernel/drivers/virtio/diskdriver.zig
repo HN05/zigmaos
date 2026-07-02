@@ -12,7 +12,7 @@ const Buffer = @import("../../buffer.zig");
 const Disk = @import("disk.zig");
 const Queue = Disk.DiskQueue;
 const mmio = @import("mmio.zig");
-const scheduler = @import("../../scheduler.zig");
+const execution = @import("../../execution.zig");
 const fs = @import("../../filesystem.zig");
 
 var disk: Disk = undefined;
@@ -130,7 +130,7 @@ fn freeDescriptor(index: u16) void {
     descriptor.next_index = 0;
     disk.free[index] = true;
 
-    scheduler.wakeup(&disk.free[0]);
+    execution.scheduler.wakeup(&disk.free[0]);
 }
 
 // free a chain of descriptors.
@@ -270,7 +270,7 @@ pub fn interrupt() void {
 
         const buffer = disk.info[id].buffer.?;
         buffer.disk_owned = false; // disk is done with buf
-        scheduler.wakeup(buffer);
+        execution.scheduler.wakeup(buffer);
 
         disk.used_idx +%= 1;
     }

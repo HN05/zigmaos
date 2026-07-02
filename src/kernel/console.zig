@@ -15,8 +15,7 @@ const uart = @import("uart.zig");
 const mem = @import("memory.zig");
 const Device = @import("device.zig");
 const ad = @import("address.zig");
-const Process = @import("process.zig");
-const scheduler = @import("scheduler.zig");
+const execution = @import("execution.zig");
 
 fn control(char: u8) u8 {
     return char - '@';
@@ -93,7 +92,7 @@ fn read(destination_address: ad.AnyAddress, length: u32) Device.ReadErrors!u32 {
         // wait until interrupt handler has put some
         // input into cons.buffer.
         while (inputBuffer.readIndex == inputBuffer.writeIndex) {
-            const process = Process.getCurrent() orelse return Device.ReadErrors.NoRunningProcess;
+            const process = execution.Process.getCurrent() orelse return Device.ReadErrors.NoRunningProcess;
             if (process.isKilled()) {
                 return Device.ReadErrors.ProcessKilled;
             }
@@ -142,7 +141,7 @@ pub fn interrupt(character: u8) void {
 
     switch (character) {
         control('P') => { // print process list
-            Process.dump();
+            execution.Process.dump();
         },
         control('U') => { // kill line
             while (inputBuffer.editIndex != inputBuffer.writeIndex) {
@@ -180,7 +179,7 @@ pub fn interrupt(character: u8) void {
                 // wake up consoleread() if a whole line (or end-of-file)
                 // has arrived.
                 inputBuffer.writeIndex = inputBuffer.editIndex;
-                scheduler.wakeup(&inputBuffer.readIndex);
+                execution.scheduler.wakeup(&inputBuffer.readIndex);
             }
         },
     }

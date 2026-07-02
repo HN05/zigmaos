@@ -3,7 +3,8 @@
 //
 const std = @import("std");
 const ml = @import("memlayout.zig");
-const Cpu = @import("cpu.zig");
+const execution = @import("execution.zig");
+const getHart = execution.Cpu.getCurrentId;
 
 pub const Irq = enum(u32) {
     uart = ml.uart0_irq,
@@ -19,7 +20,7 @@ pub fn init() void {
 }
 
 pub fn initHart() void {
-    const hart = Cpu.getCurrentId();
+    const hart = getHart();
 
     // set enable bits for this hart's S-mode
     // for the uart and virtio disk.
@@ -31,13 +32,13 @@ pub fn initHart() void {
 
 // ask the PLIC what interrupt we should serve.
 pub fn claim() Irq {
-    const hart = Cpu.getCurrentId(); 
+    const hart = getHart();
     const irq = ml.plic.supervisorClaimCompleteRegister(hart).*;
     return @enumFromInt(irq);
 }
 
 // tell the PLIC we've served this IRQ.
 pub fn complete(irq: Irq) void {
-    const hart = Cpu.getCurrentId();
+    const hart = getHart();
     ml.plic.supervisorClaimCompleteRegister(hart).* = @intFromEnum(irq);
 }

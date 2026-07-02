@@ -1,5 +1,5 @@
 const Sstatus = @import("csr.zig").Sstatus;
-const Cpu = @import("cpu.zig");
+const execution = @import("execution.zig");
 
 // enable device interrupts
 pub fn enable() void {
@@ -23,7 +23,7 @@ pub fn pushOff() void {
     const previousInterruptState = isEnabled();
     disable();
 
-    const cpu = Cpu.getCurrent();
+    const cpu = execution.Cpu.getCurrent();
     if (cpu.pushDepth == 0) {
         cpu.interruptsEnabled = previousInterruptState;
     }
@@ -35,7 +35,7 @@ pub fn popOff() void {
         @panic("pop_off - interruptible");
     }
 
-    const cpu = Cpu.getCurrent();
+    const cpu = execution.Cpu.getCurrent();
     if (cpu.pushDepth < 1) {
         @panic("pop_off");
     }
