@@ -1,7 +1,6 @@
 const std = @import("std");
 const com = @import("common");
 const page_size = com.riscv.page_size;
-const SpinLock = @import("spinlock.zig");
 const kalloc = @import("kalloc.zig");
 const PagePointer = @import("address.zig").PagePointer;
 const Book = com.ringbuf.Book;
@@ -12,6 +11,7 @@ const execution = @import("execution.zig");
 const Process = execution.Process;
 const fslog = @import("log.zig");
 const ad = @import("address.zig");
+const conc = @import("concurrency.zig");
 
 // we expose these in common because they will be usIed by the user lib
 const RINGBUF_SIZE = com.ringbuf.RINGBUF_SIZE;
@@ -21,7 +21,7 @@ const MAX_RINGBUFS = com.ringbuf.MAX_RINGBUFS;
 const RingbufManager = @This();
 
 /// Global spinlock to protect the ringbuf's array
-var spinlock: SpinLock = .{ .name = "ringbuf_man" };
+var lock: conc.Mutex = .init(.spin, "ringbuf_man");
 /// Global array of ringbufs
 var ringbufs: [MAX_RINGBUFS]Ringbuf = [_]Ringbuf{.{}} ** MAX_RINGBUFS;
 
@@ -148,8 +148,8 @@ fn findRingbufByName(name: []const u8) ?*Ringbuf {
 ///  We use the process's top_free_uvm_pg to find a slot in the userspace.
 ///  We map the ringbuf twice contiguously, and the book page right under it.
 fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError!void {
-    spinlock.acquire();
-    defer spinlock.release();
+    lock.acquire();
+    defer lock.release();
 
     if (name.len > MAX_NAME_LEN or name.len == 0) return error.BadNameLength;
 
@@ -302,8 +302,8 @@ fn find_owned_ringbuf(proc: *Process) ?*Ringbuf {
 }
 
 pub fn ringbuf_disown_all(proc: *Process) void {
-    spinlock.acquire();
-    defer spinlock.release();
+    lock.acquire();
+    defer lock.release();
     for (&ringbufs) |*rb| {
         rb.disownIfOwned(proc);
     }

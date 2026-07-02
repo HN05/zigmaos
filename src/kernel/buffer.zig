@@ -13,13 +13,12 @@
 // * Only one process at a time can use a buffer,
 //     so do not keep them longer than necessary.
 
-const SpinLock = @import("spinlock.zig");
-const SleepLock = @import("sleeplock.zig");
 const common = @import("common");
 const Device = @import("device.zig");
 const drivers = @import("drivers.zig");
 const fs = @import("filesystem.zig");
 const std = @import("std");
+const conc = @import("concurrency.zig");
 
 const Buffer = @This();
 
@@ -27,7 +26,7 @@ is_valid: bool = false, // has data been read from disk?
 disk_owned: bool = undefined, // does disk "own" buf?
 device: Device.ID = undefined,
 block_number: u32 = undefined,
-lock: SleepLock = .{ .name = "buffer" },
+lock: conc.Mutex = .init(.sleep, "buffer"),
 reference_count: u32 = 0,
 previous: *Buffer = undefined, // LRU cache list
 next: *Buffer = undefined,
@@ -42,7 +41,7 @@ pub fn castData(buffer: *Buffer, comptime T: type) *T {
 
 // cache
 const Cache = struct {
-    lock: SpinLock = .{ .name = "bcache" },
+    lock: conc.Mutex = .init(.spin, "bcache"),
     buffer_array: [common.param.NBUF]Buffer = undefined, // undefined until calling init_array
 
     // Linked list of all buffers, through prev/next.

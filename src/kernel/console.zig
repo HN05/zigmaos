@@ -10,12 +10,12 @@
 //
 
 const std = @import("std");
-const SpinLock = @import("spinlock.zig");
 const uart = @import("uart.zig");
 const mem = @import("memory.zig");
 const Device = @import("device.zig");
 const ad = @import("address.zig");
 const execution = @import("execution.zig");
+const conc = @import("concurrency.zig");
 
 fn control(char: u8) u8 {
     return char - '@';
@@ -27,7 +27,7 @@ const delete = '\x7f';
 const input_buf_size = 128;
 
 const InputBuffer = struct {
-    lock: SpinLock = .{ .name = "console" },
+    lock: conc.Mutex = .init(.spin, "console"),
 
     data: [input_buf_size]u8 = undefined,
 
@@ -96,7 +96,7 @@ fn read(destination_address: ad.AnyAddress, length: u32) Device.ReadErrors!u32 {
             if (process.isKilled()) {
                 return Device.ReadErrors.ProcessKilled;
             }
-            inputBuffer.lock.sleep(&inputBuffer.readIndex);
+            inputBuffer.lock.sleepWithLock(&inputBuffer.readIndex);
         }
 
         character = inputBuffer.data[inputBuffer.readIndex % input_buf_size];

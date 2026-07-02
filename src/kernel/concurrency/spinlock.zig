@@ -2,15 +2,15 @@
 const std = @import("std");
 const Atomic = std.atomic.Value;
 const interrupts = @import("interrupts.zig");
-const execution = @import("execution.zig");
+const execution = @import("../execution.zig");
 const Cpu = execution.Cpu;
 
 const SpinLock = @This();
 
 isLocked: Atomic(bool) = .init(false),
-
-name: ?[]const u8 = null,
 cpu: ?*Cpu = null,
+
+name: []const u8,
 
 pub fn acquire(self: *SpinLock) void {
     interrupts.pushOff(); // disable interrupts to avoid deadlock.
@@ -36,10 +36,4 @@ pub fn release(self: *SpinLock) void {
 
 pub fn isHolding(self: *const SpinLock) bool {
     return (self.isLocked.raw and self.cpu == Cpu.getCurrent());
-}
-
-// Atomically release lock and sleep on chan.
-// Reacquires lock when awakened.
-pub fn sleep(self: *SpinLock, channel: *anyopaque) void {
-    execution.scheduler.sleep(channel, self);
 }

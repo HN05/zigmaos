@@ -1,7 +1,5 @@
-const SleepLock = @import("sleeplock.zig");
 const Device = @import("device.zig");
 const fs = @import("filesystem.zig");
-const SpinLock = @import("spinlock.zig");
 const common = @import("common");
 const Buffer = @import("buffer.zig");
 const std = @import("std");
@@ -10,6 +8,7 @@ const ad = @import("address.zig");
 const mem = @import("memory.zig");
 const Directory = @import("directory.zig");
 const execution = @import("execution.zig");
+const conc = @import("concurrency.zig");
 
 // Inodes.
 //
@@ -102,7 +101,7 @@ filesystem_device: Device.ID = .zero,
 inode_number: u32 = 0,
 reference_count: u32 = 0,
 
-sleep_lock: SleepLock = .{ .name = "inode" },
+raw_lock: conc.Mutex = .init(.sleep, "inode"),
 is_valid: bool = false,
 
 disk_inode: DiskInode = .{},
@@ -124,7 +123,7 @@ pub fn reset(self: *Inode) void {
 }
 
 pub const InodeTable = struct {
-    lock: SpinLock = .{ .name = "inode_table" },
+    lock: conc.Mutex = .init(.spin, "inode_table"),
     inodes: [common.param.NINODE]Inode = [_]Inode{.{}} ** common.param.NINODE,
 };
 
@@ -216,7 +215,7 @@ pub fn duplicate(inode: *Inode) *Inode {
 pub fn lock(inode: *Inode) void {
     if (inode.reference_count < 1) @panic("can't lock unused inode");
 
-    inode.sleep_lock.acquire();
+    inode.raw_lock.acquire();
 
     if (!inode.is_valid) {
         const buffer = Buffer.read(inode.filesystem_device, getInodeBlock(inode.inode_number));
@@ -231,10 +230,10 @@ pub fn lock(inode: *Inode) void {
 
 // Unlock the given inode.
 pub fn release(inode: *Inode) void {
-    if (!inode.sleep_lock.isHolding()) @panic("not holding inode lock");
+    if (!inode.raw_lock.isHolding()) @panic("not holding inode lock");
     if (inode.reference_count < 1) @panic("can't unlock unused inode");
 
-    inode.sleep_lock.release();
+    inode.raw_lock.release();
 }
 
 // Drop a reference to an in-memory inode.
@@ -251,12 +250,12 @@ pub fn put(inode: *Inode) void {
     if (inode.reference_count == 1 and inode.is_valid and inode.disk_inode.link_count == 0) {
         // ip->ref == 1 means no other process can have ip locked,
         // so this acquiresleep() won't block (or deadlock).
-        inode.sleep_lock.acquire();
+        inode.raw_lock.acquire();
         inode_table.lock.release(); // inode has no links and no other references: truncate and free.
 
         // undo lock changes after updates
         defer {
-            inode.sleep_lock.release();
+            inode.raw_lock.release();
             inode_table.lock.acquire();
         }
 

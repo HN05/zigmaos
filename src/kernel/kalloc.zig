@@ -1,5 +1,5 @@
 const std = @import("std");
-const SpinLock = @import("spinlock.zig");
+const conc = @import("concurrency.zig");
 const memlayout = @import("../kernel/memlayout.zig");
 const ad = @import("address.zig");
 const assert = std.debug.assert;
@@ -9,7 +9,7 @@ const Block = extern struct {
     next: ?*Block,
 };
 
-var lock: SpinLock = .{ .name = "kalloc" };
+var lock: conc.Mutex = .init(.spin, "kalloc");
 var freelist: ?*Block = null;
 
 pub export fn kinit() void {

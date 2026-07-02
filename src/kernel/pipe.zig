@@ -1,13 +1,13 @@
-const SpinLock = @import("spinlock.zig");
 const File = @import("file.zig");
 const memalloc = @import("kalloc.zig");
 const ad = @import("address.zig");
 const execution = @import("execution.zig");
 const mem = @import("memory.zig");
+const conc = @import("concurrency.zig");
 
 const pipe_size = 512;
 
-lock: SpinLock,
+lock: conc.Mutex,
 data: [pipe_size]u8,
 read_count: u32, // number of bytes read
 write_count: u32, // number of bytes written
@@ -31,7 +31,7 @@ pub fn alloc(read_file: **File, write_file: **File) !void {
     pipe.write_is_open = true;
     pipe.read_count = 0;
     pipe.write_count = 0;
-    pipe.lock = .{ .name = "pipe" };
+    pipe.lock = .init(.spin, "pipe");
 
     read_file.*.data = .{ .pipe = pipe };
     read_file.*.is_readable = true;
@@ -77,7 +77,7 @@ pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
         if (pipe.write_count == pipe.read_count + pipe_size) {
             // pipewrite full
             execution.scheduler.wakeup(&pipe.read_count);
-            pipe.lock.sleep(&pipe.write_count);
+            pipe.lock.sleepWithLock(&pipe.write_count);
         } else {
             const available_space = pipe_size - (pipe.write_count - pipe.read_count);
             const bytes_to_write = @min(available_space, write_count - bytes_written);
@@ -108,7 +108,7 @@ pub fn read(pipe: *Pipe, address: ad.UserAddress, read_count: u32) !u32 {
     while (pipe.read_count == pipe.write_count and pipe.write_is_open) {
         // wait for data to enter pipe
         if (process.isKilled()) return error.ProcessKilled;
-        pipe.lock.sleep(&pipe.read_count);
+        pipe.lock.sleepWithLock(&pipe.read_count);
     }
 
     var bytes_read: u32 = 0;

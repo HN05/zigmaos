@@ -1,5 +1,5 @@
-const Sstatus = @import("csr.zig").Sstatus;
-const execution = @import("execution.zig");
+const Sstatus = @import("../csr.zig").Sstatus;
+const execution = @import("../execution.zig");
 
 // enable device interrupts
 pub fn enable() void {

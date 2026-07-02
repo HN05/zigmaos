@@ -22,11 +22,11 @@
 // Log appends are synchronous.
 
 const common = @import("common");
-const SpinLock = @import("spinlock.zig");
 const Device = @import("device.zig");
 const fs = @import("filesystem.zig");
 const Buffer = @import("buffer.zig");
 const execution = @import("execution.zig");
+const conc = @import("concurrency.zig");
 
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
@@ -47,7 +47,7 @@ comptime {
 }
 
 const Log = struct {
-    lock: SpinLock,
+    lock: conc.Mutex,
     start: u32,
     size: u32,
     outstanding: u32, // how many FS sys calls are executing.
@@ -60,7 +60,7 @@ var log: Log = undefined;
 
 pub fn init(device: Device.ID, superblock: fs.SuperBlock) void {
     log = .{
-        .lock = .{ .name = "log" },
+        .lock = .init(.spin, "log"),
         .start = superblock.logstart,
         .size = superblock.nlog,
         .outstanding = 0,
@@ -127,7 +127,7 @@ pub fn beginOperation() void {
         const possible_log_size = log.header.length + (log.outstanding + 1) * common.param.max_num_operation_blocks;
 
         if (log.is_commiting or possible_log_size > common.param.log_size) {
-            log.lock.sleep(&log);
+            log.lock.sleepWithLock(&log);
         } else {
             log.outstanding += 1;
             break;

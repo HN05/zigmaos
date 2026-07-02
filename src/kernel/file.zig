@@ -2,13 +2,13 @@ const Inode = @import("inode.zig");
 const Pipe = @import("pipe.zig");
 const Device = @import("device.zig");
 const std = @import("std");
-const SpinLock = @import("spinlock.zig");
 const common = @import("common");
 const log = @import("log.zig");
 const ad = @import("address.zig");
 const fs = @import("filesystem.zig");
 const mem = @import("memory.zig");
 const execution = @import("execution.zig");
+const conc = @import("concurrency.zig");
 
 pub const FileType = enum {
     none,
@@ -55,7 +55,7 @@ pub fn hasInode(file: *const File) bool {
 }
 
 const FileTable = struct {
-    lock: SpinLock = .{ .name = "FileTable" },
+    lock: conc.Mutex = .init(.spin, "FileTable"),
     files: [common.param.NFILE]File = [_]File{.{}} ** common.param.NFILE,
 };
 

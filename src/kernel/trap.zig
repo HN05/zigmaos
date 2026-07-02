@@ -7,11 +7,12 @@ const print = @import("klog.zig").print;
 const plic = @import("plic.zig");
 const ticks = @import("ticks.zig").ticks;
 const ad = @import("address.zig");
-const interrupts = @import("interrupts.zig");
 const execution = @import("execution.zig");
 const Process = execution.Process;
 const syscall = @import("syscall.zig");
 const drivers = @import("drivers.zig");
+const conc = @import("concurrency.zig");
+
 
 extern const uservec: anyopaque;
 extern const userret: anyopaque;
@@ -53,7 +54,7 @@ export fn usertrap() void {
 
             // an interrupt will change sepc, scause, and sstatus,
             // so enable only now that we're done with those registers.
-            interrupts.enable();
+            conc.interrupts.enable();
 
             syscall.handler();
         },
@@ -91,7 +92,7 @@ pub fn usertrapret() void {
     // we're about to switch the destination of traps from
     // kerneltrap() to usertrap(), so turn off interrupts until
     // we're back in user space, where usertrap() is correct.
-    interrupts.disable();
+    conc.interrupts.disable();
 
     // send syscalls, interrupts, and exceptions to uservec in trampoline.S
     const trampoline_uservec = memlayout.trampoline_virtual_address.add(uservec_int - trampoline_int);
@@ -137,7 +138,7 @@ export fn kerneltrap() void {
     if (!csr.Sstatus.isSet(.SPP)) {
         @panic("kerneltrap: not from supervisor mode");
     }
-    if (interrupts.isEnabled()) {
+    if (conc.interrupts.isEnabled()) {
         @panic("kerneltrap: interrupts enabled");
     }
 

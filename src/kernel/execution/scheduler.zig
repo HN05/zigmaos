@@ -1,9 +1,8 @@
 const Cpu = @import("cpu.zig");
 const common = @import("common");
 const Context = common.riscv.Context;
-const interrupts = @import("../interrupts.zig");
 const Process = @import("process.zig");
-const SpinLock = @import("../spinlock.zig");
+const conc = @import("../concurrency.zig");
 
 // from switchContext.S
 extern const switchContext: fn (*Context, *Context) void;
@@ -21,7 +20,7 @@ pub fn loop() void {
 
     while (true) {
         // Avoid deadlock by ensuring that devices can interrupt.
-        interrupts.enable();
+        conc.interrupts.enable();
 
         for (&Process.processTable) |*process| {
             process.lock.acquire();
@@ -58,7 +57,7 @@ pub fn switchToScheduler() void {
 
     const cpu = Cpu.getCurrent();
     if (cpu.pushDepth != 1) @panic("switchToScheduler: locks");
-    if (interrupts.isEnabled()) @panic("switchToScheduler: can't be interrupted");
+    if (conc.interrupts.isEnabled()) @panic("switchToScheduler: can't be interrupted");
 
     const previous_interrupt_state = cpu.interruptsEnabled;
     switchContext(&process.context, &cpu.context);
@@ -75,24 +74,8 @@ pub fn yield() void {
     switchToScheduler();
 }
 
-// Atomically release lock and sleep on chan.
-// Reacquires lock when awakened.
-pub fn sleep(channel: *anyopaque, spinlock: *SpinLock) void {
-    const process = Process.getCurrent() orelse @panic("no process to put  sleep");
-
-    // Must acquire p->lock in order to
-    // change p->state and then call sched.
-    // Once we hold p->lock, we can be
-    // guaranteed that we won't miss any wakeup
-    // (wakeup locks p->lock),
-    // so it's okay to release lk.
-    process.lock.acquire();
-    spinlock.release();
-
-    // Reacquire original lock.
-    defer spinlock.acquire();
-    defer process.lock.release();
-
+// must hold process lock
+fn putProcessToSleep(channel: *anyopaque, process: *Process) void {
     // Go to sleep.
     process.sleeping_channel_unsafe = channel;
     process.state_unsafe = .sleeping;
@@ -101,6 +84,36 @@ pub fn sleep(channel: *anyopaque, spinlock: *SpinLock) void {
 
     // Tidy up.
     process.sleeping_channel_unsafe = null;
+}
+
+// must hold process lock when calling
+pub fn sleep(channel: *anyopaque) void {
+    const process = Process.getCurrentForce();
+    process.lock.acquire();
+    defer process.lock.release();
+
+    putProcessToSleep(channel, process);
+}
+
+// Atomically release lock and sleep on chan.
+// Reacquires lock when awakened.
+pub fn sleepWithLock(lock: *conc.Mutex, channel: *anyopaque) void {
+    const process = Process.getCurrentForce();
+
+    // Must acquire p->lock in order to
+    // change p->state and then call sched.
+    // Once we hold p->lock, we can be
+    // guaranteed that we won't miss any wakeup
+    // (wakeup locks p->lock),
+    // so it's okay to release lk.
+    process.lock.acquire();
+    lock.release();
+
+    putProcessToSleep(channel, process);
+
+    // Reacquire original lock.
+    process.lock.release();
+    lock.acquire();
 }
 
 // Wake up all processes sleeping on chan.

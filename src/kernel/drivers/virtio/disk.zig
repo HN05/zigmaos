@@ -1,5 +1,5 @@
-const SpinLock = @import("../../spinlock.zig");
 const Buffer = @import("../../buffer.zig");
+const conc = @import("../../concurrency.zig");
 
 pub const sector_size = 512;
 
@@ -39,7 +39,7 @@ info: [queue_size]StatusBuffer,
 // one-for-one with descriptors, for convenience.
 operations: [queue_size]BlockRequest,
 
-vdisk_lock: SpinLock,
+vdisk_lock: conc.Mutex,
 
 // these are specific to virtio block devices, e.g. disks,
 // described in Section 5.2 of the spec.

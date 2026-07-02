@@ -90,7 +90,7 @@ pub fn init() void {
         .descriptor = descriptor,
         .available = available,
         .used = used,
-        .vdisk_lock = .{ .name = "virtio disk" },
+        .vdisk_lock = .init(.spin, "virtio disk"),
         .used_idx = 0,
         .operations = undefined,
         .free = undefined,
@@ -187,7 +187,7 @@ fn readOrWrite(buffer: *Buffer, do_write: bool) void {
     var descriptor_indexes: [3]u16 = undefined;
     while (true) {
         allocDescriptorsSlice(&descriptor_indexes) catch {
-            disk.vdisk_lock.sleep(&disk.free[0]);
+            disk.vdisk_lock.sleepWithLock(&disk.free[0]);
             continue;
         };
         break;
@@ -239,7 +239,7 @@ fn readOrWrite(buffer: *Buffer, do_write: bool) void {
 
     // Wait for virtio_disk_intr() to say request has finished.
     while (buffer.disk_owned) {
-        disk.vdisk_lock.sleep(buffer);
+        disk.vdisk_lock.sleepWithLock(buffer);
     }
 
     disk.info[descriptor_indexes[0]].buffer = null;

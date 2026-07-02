@@ -1,12 +1,12 @@
 const std = @import("std");
 const mem = std.mem;
 const fmt = std.fmt;
-const SpinLock = @import("spinlock.zig");
 const common = @import("common");
 const Color = common.color.Color;
 const console = @import("console.zig");
+const conc = @import("concurrency.zig");
 
-var lock: SpinLock = .{ .name = "klog" };
+var lock: conc.Mutex = .init(.spin, "klog");
 pub var locking: bool = true;
 pub export var panicked: bool = false;
 

@@ -1,5 +1,5 @@
-const SpinLock = @import("spinlock.zig");
 const execution = @import("execution.zig");
+const conc = @import("concurrency.zig");
 
 pub const ticks = &ticksBacking;
 
@@ -7,11 +7,8 @@ var ticksBacking: Ticks = .{};
 
 const Ticks = struct {
     ticks: usize = 0,
-    lock: SpinLock =.{ .name = "ticks lock" }, 
+    lock: conc.Mutex = .init(.spin, "ticks lock"),
 
-    const SleepError = error {
-    Killed,
-};
     pub fn incrementSafe(self: *Ticks) void {
         {
             self.lock.acquire();
@@ -29,17 +26,16 @@ const Ticks = struct {
         return self.ticks;
     }
 
-    pub fn sleepFor(self: *Ticks, ticksToSleep: usize) SleepError!void {
+    pub fn sleepFor(self: *Ticks, ticksToSleep: usize) !void {
         self.lock.acquire();
         defer self.lock.release();
 
         const ticks0 = self.ticks;
         while (self.ticks - ticks0 < ticksToSleep) {
             if (execution.Process.isKilled(.getCurrentForce())) {
-                return SleepError.Killed;
+                return error.ProcessIsKilled;
             }
-            self.lock.sleep(self);
+            self.lock.sleepWithLock(self);
         }
     }
 };
-

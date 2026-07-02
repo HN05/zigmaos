@@ -1,13 +1,11 @@
 const common = @import("common");
 const param = common.param;
 const Context = common.riscv.Context;
-const SpinLock = @import("../spinlock.zig");
 const ad = @import("../address.zig");
 const ml = @import("../memlayout.zig");
 const kalloc = @import("../kalloc.zig");
 const mem = @import("../memory.zig");
 const Cpu = @import("cpu.zig");
-const interrupts = @import("../interrupts.zig");
 const std = @import("std");
 const ringbuf = @import("../ringbuf.zig");
 const print = @import("../klog.zig").print;
@@ -17,6 +15,7 @@ const Inode = @import("../inode.zig");
 const trap = @import("../trap.zig");
 const fs = @import("../filesystem.zig");
 const log = @import("../log.zig");
+const conc = @import("../concurrency.zig");
 
 pub var processTable: [param.NPROC]Process = blk: {
     var table: [param.NPROC]Process = undefined;
@@ -33,7 +32,7 @@ pub var nextProcessId: std.atomic.Value(u32) = .init(1);
 // parents are not lost. helps obey the
 // memory model when using p->parent.
 // must be acquired before any p->lock.
-pub var waitLock: SpinLock = .{ .name = "wait_lock" };
+pub var waitLock: conc.Mutex = .init(.spin, "wait_lock");
 
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
@@ -117,7 +116,7 @@ pub const ProcessState = enum {
 
 const Process = @This();
 // Per-process state
-lock: SpinLock = .{ .name = "proc" },
+lock: conc.Mutex = .init(.spin, "process lock"),
 
 // p->lock must be held when using these:
 state_unsafe: ProcessState = .unused,
@@ -157,10 +156,10 @@ pub fn getCurrentThrows() !*Process {
 }
 
 pub fn getCurrent() ?*Process {
-    interrupts.pushOff();
+    conc.interrupts.pushOff();
     const cpu = Cpu.getCurrent();
     const proc = cpu.runningProcess;
-    interrupts.popOff();
+    conc.interrupts.popOff();
     return proc;
 }
 
@@ -471,7 +470,7 @@ pub fn wait(exit_status_destination: ?ad.UserAddress) !u32 {
         if (!have_kids) return error.DoesNotHaveChildren;
         if (current_process.isKilled()) return error.ProcessIsKilled;
 
-        scheduler.sleep(current_process, &waitLock);
+        scheduler.sleepWithLock(&waitLock, current_process);
     }
 }
 
