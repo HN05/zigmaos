@@ -1,5 +1,5 @@
-const SpinLock = @import("../spinlock.zig");
-const Buffer = @import("../buffer.zig");
+const SpinLock = @import("../../spinlock.zig");
+const Buffer = @import("../../buffer.zig");
 
 pub const sector_size = 512;
 

@@ -17,7 +17,7 @@ const SpinLock = @import("spinlock.zig");
 const SleepLock = @import("sleeplock.zig");
 const common = @import("common");
 const Device = @import("device.zig");
-const virtio = @import("virtio.zig");
+const drivers = @import("drivers.zig");
 const fs = @import("filesystem.zig");
 const std = @import("std");
 
@@ -104,7 +104,7 @@ var cacheBacking = Cache{};
 pub fn read(device: Device.ID, block_number: u32) *Buffer {
     const buffer = cache.get_buffer(device, block_number);
     if (!buffer.is_valid) {
-        virtio.disk_driver.read(buffer);
+        drivers.disk.read(buffer);
         buffer.is_valid = true;
     }
     return buffer;
@@ -113,7 +113,7 @@ pub fn read(device: Device.ID, block_number: u32) *Buffer {
 // Write buffer's contents to disk.  Must be locked.
 pub fn write(buffer: *Buffer) void {
     if (!buffer.lock.isHolding()) @panic("buffer write");
-    virtio.disk_driver.write(buffer);
+    drivers.disk.write(buffer);
 }
 
 // Release a locked buffer.

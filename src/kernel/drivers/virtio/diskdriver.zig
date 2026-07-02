@@ -5,15 +5,15 @@
 // qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 //
 
-const ml = @import("../memlayout.zig");
-const ad = @import("../address.zig");
-const alloc = @import("../kalloc.zig");
-const Buffer = @import("../buffer.zig");
+const ml = @import("../../memlayout.zig");
+const ad = @import("../../address.zig");
+const alloc = @import("../../kalloc.zig");
+const Buffer = @import("../../buffer.zig");
 const Disk = @import("disk.zig");
 const Queue = Disk.DiskQueue;
 const mmio = @import("mmio.zig");
-const scheduler = @import("../scheduler.zig");
-const fs = @import("../filesystem.zig");
+const scheduler = @import("../../scheduler.zig");
+const fs = @import("../../filesystem.zig");
 
 var disk: Disk = undefined;
 

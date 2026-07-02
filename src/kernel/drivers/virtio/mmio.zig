@@ -1,5 +1,5 @@
-const ad = @import("../address.zig");
-const ml = @import("../memlayout.zig");
+const ad = @import("../../address.zig");
+const ml = @import("../../memlayout.zig");
 
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h

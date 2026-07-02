@@ -9,7 +9,7 @@ const memory = @import("memory.zig");
 const Process = @import("process.zig");
 const Cpu = @import("cpu.zig");
 const scheduler = @import("scheduler.zig");
-const virtio = @import("virtio.zig");
+const drivers = @import("drivers.zig");
 const Buffer = @import("buffer.zig");
 
 const log = std.log.scoped(.kmain);
@@ -27,7 +27,7 @@ pub fn kmain() void {
         plic.init(); // set up interrupt controller
         plic.initHart(); // ask PLIC for device interrupts
         Buffer.cache.init_array(); // buffer cache
-        virtio.disk_driver.init(); // emulated hard disk
+        drivers.disk.init(); // emulated hard disk
         Process.initFirstUser(); // first user process
         started.store(true, .seq_cst);
     } else {
