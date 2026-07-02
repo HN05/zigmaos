@@ -1,8 +1,11 @@
-// Sleeping locks
+const kernel = @import("root");
 const std = @import("std");
+
 const SpinLock = @import("spinlock.zig");
 const Mutex = @import("mutex.zig").Mutex;
-const execution = @import("../execution.zig");
+
+const scheduler = kernel.execution.scheduler;
+const Process = kernel.execution.Process;
 
 const SleepLock = @This();
 // Long-term locks for processes
@@ -20,12 +23,12 @@ pub fn acquire(self: *SleepLock) void {
 
     // sleep while lock is held
     while (self.isLocked) {
-        execution.scheduler.sleepWithLock(&mutex, self);
+        scheduler.sleepWithLock(&mutex, self);
     }
 
     // get the lock
     self.isLocked = true;
-    self.pid = execution.Process.getCurrentForce().pid_unsafe;
+    self.pid = Process.getCurrentForce().pid_unsafe;
 }
 
 pub fn release(self: *SleepLock) void {
@@ -36,12 +39,12 @@ pub fn release(self: *SleepLock) void {
     self.pid = null;
 
     // wakeup others wanting to acquire lock
-    execution.scheduler.wakeup(self);
+    scheduler.wakeup(self);
 }
 
 pub fn isHolding(self: *SleepLock) bool {
     self.lock.acquire();
     defer self.lock.release();
 
-    return self.isLocked and (self.pid == execution.Process.getCurrentForce().pid_unsafe);
+    return self.isLocked and (self.pid == Process.getCurrentForce().pid_unsafe);
 }

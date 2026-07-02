@@ -1,17 +1,20 @@
+const kernel = @import("root");
 const std = @import("std");
 const com = @import("common");
-const page_size = com.riscv.page_size;
+
 const kalloc = @import("kalloc.zig");
 const PagePointer = @import("address.zig").PagePointer;
+const mem = @import("memory.zig");
+const fslog = @import("log.zig");
+const ad = @import("address.zig");
+
+const execution = kernel.execution;
+const page_size = com.riscv.page_size;
 const Book = com.ringbuf.Book;
 const MagicBuf = com.ringbuf.MagicBuf;
 const Rb = com.ringbuf;
-const mem = @import("memory.zig");
-const execution = @import("execution.zig");
 const Process = execution.Process;
-const fslog = @import("log.zig");
-const ad = @import("address.zig");
-const conc = @import("concurrency.zig");
+const Mutex = kernel.concurrency.Mutex;
 
 // we expose these in common because they will be usIed by the user lib
 const RINGBUF_SIZE = com.ringbuf.RINGBUF_SIZE;
@@ -21,7 +24,7 @@ const MAX_RINGBUFS = com.ringbuf.MAX_RINGBUFS;
 const RingbufManager = @This();
 
 /// Global spinlock to protect the ringbuf's array
-var lock: conc.Mutex = .init(.spin, "ringbuf_man");
+var lock: Mutex = .init(.spin, "ringbuf_man");
 /// Global array of ringbufs
 var ringbufs: [MAX_RINGBUFS]Ringbuf = [_]Ringbuf{.{}} ** MAX_RINGBUFS;
 

@@ -20,13 +20,15 @@
 //   block C
 //   ...
 // Log appends are synchronous.
-
+const kernel = @import("root");
 const common = @import("common");
+
 const Device = @import("device.zig");
 const fs = @import("filesystem.zig");
 const Buffer = @import("buffer.zig");
-const execution = @import("execution.zig");
-const conc = @import("concurrency.zig");
+
+const execution = kernel.execution;
+const Mutex = kernel.concurrency.Mutex;
 
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
@@ -47,7 +49,7 @@ comptime {
 }
 
 const Log = struct {
-    lock: conc.Mutex,
+    lock: Mutex,
     start: u32,
     size: u32,
     outstanding: u32, // how many FS sys calls are executing.
@@ -183,13 +185,12 @@ fn writeLog() void {
 
 fn commit() void {
     if (log.header.length > 0) {
-        writeLog();// Write modified blocks from cache to log
-        writeHead();// Write header to disk -- the real commit
+        writeLog(); // Write modified blocks from cache to log
+        writeHead(); // Write header to disk -- the real commit
         installTransaction(false); // Now install writes to home locations
         log.header.length = 0;
-        writeHead();// Erase the transaction from the log
+        writeHead(); // Erase the transaction from the log
     }
-
 }
 
 // Caller has modified b->data and is done with the buffer.
@@ -211,11 +212,11 @@ pub fn write(buffer: *Buffer) void {
     var index: usize = 0;
     while (index < log.header.length) : (index += 1) {
         if (log.header.block[index] == buffer.block_number) {
-            break;// log absorption
+            break; // log absorption
         }
     }
     log.header.block[index] = buffer.block_number;
-    if (index == log.header.length) {// Add new block to log?
+    if (index == log.header.length) { // Add new block to log?
         buffer.pin();
         log.header.length += 1;
     }

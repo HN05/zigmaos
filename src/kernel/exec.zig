@@ -1,13 +1,16 @@
-const elf = @import("elf.zig");
+const kernel = @import("root");
 const common = @import("common");
-const param = common.param;
+const std = @import("std");
+
+const elf = @import("elf.zig");
 const mem = @import("memory.zig");
 const ad = @import("address.zig");
-const std = @import("std");
 const Inode = @import("inode.zig");
 const log = @import("log.zig");
 const fs = @import("filesystem.zig");
-const execution = @import("execution.zig");
+
+const execution = kernel.execution;
+const param = common.param;
 const Process = execution.Process;
 
 // Load a program segment into pagetable at virtual address va.
@@ -33,7 +36,7 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
 
     const process = Process.getCurrentForce();
 
-    const pageTable = try process.createPagetable(); 
+    const pageTable = try process.createPagetable();
     var programSize: usize = 0;
     errdefer mem.freePageTable(pageTable, programSize);
 

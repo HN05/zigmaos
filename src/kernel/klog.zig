@@ -1,13 +1,15 @@
 const std = @import("std");
+const kernel = @import("root");
+const common = @import("common");
+
 const mem = std.mem;
 const fmt = std.fmt;
-const common = @import("common");
 const Color = common.color.Color;
-const drivers = @import("drivers.zig");
+const drivers = kernel.drivers;
 const console = drivers.console;
-const conc = @import("concurrency.zig");
+const Mutex = kernel.concurrency.Mutex;
 
-var lock: conc.Mutex = .init(.spin, "klog");
+var lock: Mutex = .init(.spin, "klog");
 pub var locking: bool = true;
 pub export var panicked: bool = false;
 

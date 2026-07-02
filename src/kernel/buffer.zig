@@ -12,13 +12,14 @@
 // * Do not use the buffer after calling brelse.
 // * Only one process at a time can use a buffer,
 //     so do not keep them longer than necessary.
-
-const common = @import("common");
-const Device = @import("device.zig");
-const drivers = @import("drivers.zig");
-const fs = @import("filesystem.zig");
+const kernel = @import("root");
 const std = @import("std");
-const conc = @import("concurrency.zig");
+const common = @import("common");
+
+const Device = @import("device.zig");
+const drivers = kernel.drivers;
+const fs = @import("filesystem.zig");
+const conc = kernel.concurrency;
 
 const Buffer = @This();
 

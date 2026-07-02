@@ -1,5 +1,6 @@
-const Inode = @import("inode.zig");
 const std = @import("std");
+
+const Inode = @import("inode.zig");
 const fs = @import("filesystem.zig");
 const ad = @import("address.zig");
 

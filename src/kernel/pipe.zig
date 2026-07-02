@@ -1,9 +1,12 @@
+const kernel = @import("root");
+
 const File = @import("file.zig");
 const memalloc = @import("kalloc.zig");
 const ad = @import("address.zig");
-const execution = @import("execution.zig");
 const mem = @import("memory.zig");
-const conc = @import("concurrency.zig");
+
+const conc = kernel.concurrency;
+const execution = kernel.execution;
 
 const pipe_size = 512;
 

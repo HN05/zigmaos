@@ -23,4 +23,3 @@ pub const SyscallNum = enum(usize) {
     ringbuf = 22,
     _,
 };
-

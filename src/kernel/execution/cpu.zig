@@ -1,7 +1,9 @@
 const common = @import("common");
+
+const Process = @import("process.zig");
+
 const param = common.param;
 const Register = common.riscv.Register;
-const Process = @import("process.zig");
 const Context = common.riscv.Context;
 
 const Cpu = @This();
@@ -23,4 +25,3 @@ pub fn getCurrentId() usize {
 pub fn getCurrent() *Cpu {
     return &table[getCurrentId()];
 }
-

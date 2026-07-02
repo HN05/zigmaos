@@ -1,10 +1,12 @@
+const kernel = @import("root");
 const std = @import("std");
 
 const alloc = @import("kalloc.zig");
 const ad = @import("address.zig");
 const ml = @import("memlayout.zig");
 const csr = @import("csr.zig");
-const execution = @import("execution.zig");
+
+const execution = kernel.execution;
 
 var kernelPagetable: ad.PageTablePtr = undefined;
 
@@ -119,7 +121,12 @@ fn kernelMemoryMake() ad.PageTablePtr {
     kernelInitMap(table, ml.uart0_base_address, ad.page_size, true);
 
     // virtio mmio disk interface
-    kernelInitMap(table, ml.virtio0_base_address, ad.page_size, true,);
+    kernelInitMap(
+        table,
+        ml.virtio0_base_address,
+        ad.page_size,
+        true,
+    );
 
     // PLIC
     kernelInitMap(table, ml.plic.base_address, ml.plic.size, true);

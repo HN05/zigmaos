@@ -1,5 +1,7 @@
-const execution = @import("execution.zig");
-const conc = @import("concurrency.zig");
+const kernel = @import("root");
+
+const execution = kernel.execution;
+const Mutex = kernel.concurrency.Mutex;
 
 pub const ticks = &ticksBacking;
 
@@ -7,7 +9,7 @@ var ticksBacking: Ticks = .{};
 
 const Ticks = struct {
     ticks: usize = 0,
-    lock: conc.Mutex = .init(.spin, "ticks lock"),
+    lock: Mutex = .init(.spin, "ticks lock"),
 
     pub fn incrementSafe(self: *Ticks) void {
         {

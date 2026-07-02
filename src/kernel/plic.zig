@@ -2,9 +2,11 @@
 // the riscv Platform Level Interrupt Controller (PLIC).
 //
 const std = @import("std");
+const kernel = @import("root");
+
 const ml = @import("memlayout.zig");
-const execution = @import("execution.zig");
-const getHart = execution.Cpu.getCurrentId;
+
+const getHart = kernel.execution.Cpu.getCurrentId;
 
 pub const Irq = enum(u32) {
     uart = ml.uart0_irq,

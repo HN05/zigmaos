@@ -1,6 +1,9 @@
+const kernel = @import("root");
+
 const SpinLock = @import("spinlock.zig");
 const SleepLock = @import("sleeplock.zig");
-const execution = @import("../execution.zig");
+
+const execution = kernel.execution;
 
 pub const LockType = enum { spin, sleep };
 

@@ -1,19 +1,22 @@
+const kernel = @import("root");
 const std = @import("std");
+const common = @import("common");
+
 const log_root = @import("klog.zig");
-const riscv = @import("common").riscv;
 const Kalloc = @import("kalloc.zig");
 const plic = @import("plic.zig");
 const trap = @import("trap.zig");
 const memory = @import("memory.zig");
-const drivers = @import("drivers.zig");
 const Buffer = @import("buffer.zig");
-const execution = @import("execution.zig");
 
+const execution = kernel.execution;
+const drivers = kernel.drivers;
 const log = std.log.scoped(.kmain);
+const riscv = common.riscv;
 
 var started = std.atomic.Value(bool).init(false);
 
-pub fn kmain() void {
+pub fn kernelMain() void {
     if (execution.Cpu.getCurrentId() == 0) {
         drivers.console.init();
         log.info("xv6 kernel is booting", .{});

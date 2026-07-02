@@ -1,5 +1,7 @@
+const kernel = @import("root");
+
 const Sstatus = @import("../csr.zig").Sstatus;
-const execution = @import("../execution.zig");
+const execution = kernel.execution;
 
 // enable device interrupts
 pub fn enable() void {

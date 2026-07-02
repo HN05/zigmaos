@@ -1,9 +1,10 @@
-const std = @import("std");
+const kernel = @import("root");
+
 const log = @import("klog.zig");
 const sysargs = @import("sysargs.zig");
 const ticks = @import("ticks.zig").ticks;
-const execution = @import("execution.zig");
-const Process = execution.Process;
+
+const Process = kernel.execution.Process;
 
 pub fn sys_exit() u64 {
     const exitCode: u32 = @truncate(sysargs.getInt(.a0));

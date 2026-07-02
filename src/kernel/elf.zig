@@ -6,7 +6,7 @@ const ElfIdentifier = extern struct {
 
     magic: u32, // must equal ELF_MAGIC
     rest: [12]u8, // don't care
-    
+
     pub fn isValid(self: *ElfIdentifier) bool {
         return self.magic == correctMagic;
     }

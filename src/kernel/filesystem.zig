@@ -1,7 +1,8 @@
+const std = @import("std");
+
 const Device = @import("device.zig");
 const Buffer = @import("buffer.zig");
 const log = @import("log.zig");
-const std = @import("std");
 const Inode = @import("inode.zig");
 
 pub const FileType = enum(u16) { free = 0, directory = 1, file = 2, device = 3 };

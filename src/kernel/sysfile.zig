@@ -5,14 +5,13 @@
 //
 
 const std = @import("std");
+const kernel = @import("root");
+const common = @import("common");
 
 const sysargs = @import("sysargs.zig");
 const log = @import("debuglog.zig");
-const common = @import("common");
-const param = common.param;
 const kalloc = @import("kalloc.zig");
 const address = @import("address.zig");
-const page_size = common.riscv.page_size;
 const mem = @import("memory.zig");
 const execFile = @import("exec.zig");
 const Inode = @import("inode.zig");
@@ -23,8 +22,10 @@ const Directory = @import("directory.zig");
 const fs = @import("filesystem.zig");
 const Pipe = @import("pipe.zig");
 const ad = @import("address.zig");
-const execution = @import("execution.zig");
-const Process = execution.Process;
+
+const page_size = common.riscv.page_size;
+const param = common.param;
+const Process = kernel.execution.Process;
 
 pub fn sys_dup() u64 {
     const file = sysargs.getFile(.a0) catch |err| {
@@ -343,7 +344,6 @@ pub fn open() !usize {
 
     const file = File.alloc() orelse return OpenErrors.FailedAllocFile;
     errdefer file.close();
-
 
     if (inode.disk_inode.type == .device) {
         file.data = .{ .device = .{

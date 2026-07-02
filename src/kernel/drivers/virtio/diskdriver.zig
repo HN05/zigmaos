@@ -5,15 +5,18 @@
 // qemu ... -drive file=fs.img,if=none,format=raw,id=x0 -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 //
 
+const kernel = @import("root");
+
 const ml = @import("../../memlayout.zig");
 const ad = @import("../../address.zig");
 const alloc = @import("../../kalloc.zig");
 const Buffer = @import("../../buffer.zig");
-const Disk = @import("disk.zig");
-const Queue = Disk.DiskQueue;
-const mmio = @import("mmio.zig");
-const execution = @import("../../execution.zig");
 const fs = @import("../../filesystem.zig");
+const Disk = @import("disk.zig");
+const mmio = @import("mmio.zig");
+
+const Queue = Disk.DiskQueue;
+const execution = kernel.execution;
 
 var disk: Disk = undefined;
 
@@ -275,4 +278,3 @@ pub fn interrupt() void {
         disk.used_idx +%= 1;
     }
 }
-

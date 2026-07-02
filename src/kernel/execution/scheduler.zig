@@ -1,8 +1,10 @@
+const kernel = @import("root");
+
 const Cpu = @import("cpu.zig");
 const common = @import("common");
 const Context = common.riscv.Context;
 const Process = @import("process.zig");
-const conc = @import("../concurrency.zig");
+const conc = kernel.concurrency;
 
 // from switchContext.S
 extern const switchContext: fn (*Context, *Context) void;

@@ -1,12 +1,14 @@
+const kernel = @import("root");
 const std = @import("std");
 const common = @import("common");
-const param = common.param;
+
 const log = @import("klog.zig");
 const mem = @import("memory.zig");
 const ad = @import("address.zig");
-const execution = @import("execution.zig");
-const Process = execution.Process;
 const File = @import("file.zig");
+
+const Process = kernel.execution.Process;
+const param = common.param;
 
 const InputRegister = enum { a0, a1, a2, a3, a4, a5 };
 pub const errorVal = ~@as(u64, 0);
@@ -106,7 +108,7 @@ pub fn fetchAddr(address: ad.UserAddress, destination: *ad.UserAddress) FetchAdd
 }
 
 // Fetch the nul-terminated string at addr from the current process.
-// Returns length of string, not including nul 
+// Returns length of string, not including nul
 // may not include null terminator
 pub fn getStringFromAddress(address: ad.UserAddress, buffer: []u8) !usize {
     const process = Process.getCurrentForce();

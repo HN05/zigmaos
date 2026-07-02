@@ -1,3 +1,4 @@
+const kernel = @import("root");
 const std = @import("std");
 
 const riscv = @import("common").riscv;

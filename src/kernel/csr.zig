@@ -1,6 +1,9 @@
 const std = @import("std");
-const registers = @import("common").riscv.registers;
+const common = @import("common");
+
 const address = @import("address.zig");
+
+const registers = common.riscv.registers;
 
 pub fn FlagOps(comptime Flag: type) type {
     return struct {

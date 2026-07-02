@@ -101,7 +101,7 @@ pub fn build(b: *std.Build) !void {
     const user_linker = "build/linker/user.ld";
 
     const kernel_mod = b.createModule(.{
-        .root_source_file = b.path("src/kernel/start.zig"),
+        .root_source_file = b.path("src/kernel/kernel.zig"),
         .target = target,
         .optimize = .ReleaseSmall,
     });

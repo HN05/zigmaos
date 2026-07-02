@@ -1,10 +1,11 @@
-// Much of this code comes from https://github.com/binarycraft007/xv6-riscv-zig
+const kernel = @import("root");
 
 const memlayout = @import("../memlayout.zig");
 const log_root = @import("../klog.zig");
 const console = @import("console.zig");
-const execution = @import("../execution.zig");
-const conc = @import("../concurrency.zig");
+
+const execution = kernel.execution;
+const conc = kernel.concurrency;
 
 /// the UART control registers.
 /// some have different meanings for
@@ -163,4 +164,3 @@ fn readReg(register_offset: usize) u8 {
 fn writeReg(register_offset: usize, value: u8) void {
     getRegPtr(register_offset).* = value;
 }
-

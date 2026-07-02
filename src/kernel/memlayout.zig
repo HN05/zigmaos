@@ -1,7 +1,10 @@
-// Physical memory layout
-const param = @import("common").param;
+const common = @import("common");
+
 const ad = @import("address.zig");
-const riscv = @import("common").riscv;
+
+const riscv = common.riscv;
+const param = common.param;
+
 pub const kernel_stack_page_count = param.kernel_stack_page_count;
 
 // qemu -machine virt is set up like this,
@@ -111,7 +114,6 @@ extern const etext: anyopaque; // kernel.ld sets this to end of kernel code.
 pub fn etextAddress() ad.KernelAddress {
     return .fromPtr(&etext);
 }
-
 
 // first address after kernel.
 extern const end: anyopaque;

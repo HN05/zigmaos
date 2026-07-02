@@ -1,17 +1,20 @@
+const kernel = @import("root");
 const std = @import("std");
+const common = @import("common");
+
 const csr = @import("csr.zig");
-const riscv = @import("common").riscv;
 const memlayout = @import("memlayout.zig");
 const print = @import("klog.zig").print;
 const plic = @import("plic.zig");
 const ticks = @import("ticks.zig").ticks;
 const ad = @import("address.zig");
-const execution = @import("execution.zig");
-const Process = execution.Process;
 const syscall = @import("syscall.zig");
-const drivers = @import("drivers.zig");
-const conc = @import("concurrency.zig");
 
+const execution = kernel.execution;
+const drivers = kernel.drivers;
+const conc = kernel.concurrency;
+const Process = execution.Process;
+const riscv = common.riscv;
 
 extern const uservec: anyopaque;
 extern const userret: anyopaque;

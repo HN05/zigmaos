@@ -1,9 +1,10 @@
-// Much of this code comes from https://github.com/binarycraft007/xv6-riscv-zig
+const kernel = @import("root");
 const std = @import("std");
-const Atomic = std.atomic.Value;
+
 const interrupts = @import("interrupts.zig");
-const execution = @import("../execution.zig");
-const Cpu = execution.Cpu;
+
+const Atomic = std.atomic.Value;
+const Cpu = kernel.execution.Cpu;
 
 const SpinLock = @This();
 

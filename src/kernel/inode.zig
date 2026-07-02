@@ -1,14 +1,17 @@
+const kernel = @import("root");
+const std = @import("std");
+const common = @import("common");
+
 const Device = @import("device.zig");
 const fs = @import("filesystem.zig");
-const common = @import("common");
 const Buffer = @import("buffer.zig");
-const std = @import("std");
 const log = @import("log.zig");
 const ad = @import("address.zig");
 const mem = @import("memory.zig");
 const Directory = @import("directory.zig");
-const execution = @import("execution.zig");
-const conc = @import("concurrency.zig");
+
+const execution = kernel.execution;
+const conc = kernel.concurrency;
 
 // Inodes.
 //

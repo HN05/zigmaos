@@ -1,7 +1,10 @@
 const std = @import("std");
-const conc = @import("concurrency.zig");
+const kernel = @import("root");
+
 const memlayout = @import("../kernel/memlayout.zig");
 const ad = @import("address.zig");
+
+const conc = kernel.concurrency;
 const assert = std.debug.assert;
 const log = std.log.scoped(.kalloc);
 
