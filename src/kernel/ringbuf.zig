@@ -5,10 +5,10 @@ const com = @import("common");
 const kalloc = @import("kalloc.zig");
 const PagePointer = @import("address.zig").PagePointer;
 const mem = @import("memory.zig");
-const fslog = @import("log.zig");
 const ad = @import("address.zig");
 
 const execution = kernel.execution;
+const fs = kernel.filesystem;
 const page_size = com.riscv.page_size;
 const Book = com.ringbuf.Book;
 const MagicBuf = com.ringbuf.MagicBuf;
@@ -271,8 +271,8 @@ fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError
 
 const sysargs = @import("sysargs.zig");
 pub fn syscall() u64 {
-    fslog.beginOperation();
-    defer fslog.endOperation();
+    fs.beginOperation();
+    defer fs.endOperation();
 
     var buffer: [MAX_NAME_LEN]u8 = undefined;
 

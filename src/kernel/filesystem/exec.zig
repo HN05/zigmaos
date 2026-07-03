@@ -3,11 +3,11 @@ const common = @import("common");
 const std = @import("std");
 
 const elf = @import("elf.zig");
-const mem = @import("memory.zig");
-const ad = @import("address.zig");
 const Inode = @import("inode.zig");
 const log = @import("log.zig");
-const fs = @import("filesystem.zig");
+const blocks = @import("blocks.zig");
+const mem = @import("../memory.zig");
+const ad = @import("../address.zig");
 
 const execution = kernel.execution;
 const param = common.param;

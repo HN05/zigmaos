@@ -10,13 +10,13 @@ const kernel = @import("root");
 const ml = @import("../../memlayout.zig");
 const ad = @import("../../address.zig");
 const alloc = @import("../../kalloc.zig");
-const Buffer = @import("../../buffer.zig");
-const fs = @import("../../filesystem.zig");
 const Disk = @import("disk.zig");
 const mmio = @import("mmio.zig");
 
 const Queue = Disk.DiskQueue;
 const execution = kernel.execution;
+const fs = kernel.filesystem;
+const Buffer = fs.Buffer;
 
 var disk: Disk = undefined;
 

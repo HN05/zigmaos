@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const ad = @import("address.zig");
+const ad = @import("../address.zig");
 
 pub const max_device_count = 10;
 pub const console_major = 1;

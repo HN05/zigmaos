@@ -1,9 +1,9 @@
 const kernel = @import("root");
 
 const File = @import("file.zig");
-const memalloc = @import("kalloc.zig");
-const ad = @import("address.zig");
-const mem = @import("memory.zig");
+const memalloc = @import("../kalloc.zig");
+const ad = @import("../address.zig");
+const mem = @import("../memory.zig");
 
 const conc = kernel.concurrency;
 const execution = kernel.execution;

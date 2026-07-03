@@ -13,19 +13,18 @@ const log = @import("debuglog.zig");
 const kalloc = @import("kalloc.zig");
 const address = @import("address.zig");
 const mem = @import("memory.zig");
-const execFile = @import("exec.zig");
-const Inode = @import("inode.zig");
-const File = @import("file.zig");
-const Device = @import("device.zig");
-const fslog = @import("log.zig");
-const Directory = @import("directory.zig");
-const fs = @import("filesystem.zig");
-const Pipe = @import("pipe.zig");
 const ad = @import("address.zig");
 
 const page_size = common.riscv.page_size;
 const param = common.param;
 const Process = kernel.execution.Process;
+const fs = kernel.filesystem;
+const Pipe = fs.Pipe;
+const Directory = fs.Directory;
+const File = fs.File;
+const Inode = fs.Inode;
+const Device = fs.Device;
+
 
 pub fn sys_dup() u64 {
     const file = sysargs.getFile(.a0) catch |err| {
@@ -117,8 +116,8 @@ pub fn link() LinkErrors!void {
     var new: [Inode.max_path_size]u8 = undefined;
     const new_length = sysargs.getString(.a1, &new) catch return LinkErrors.FailedGetNewPath;
 
-    fslog.beginOperation();
-    defer fslog.endOperation();
+    fs.beginOperation();
+    defer fs.endOperation();
 
     const inode = Inode.resolvePath(old[0..old_length]) orelse return LinkErrors.FailedGetInode;
     defer inode.put();
@@ -171,8 +170,8 @@ pub fn unlink() UnlinkErrors!void {
     var path: [Inode.max_path_size]u8 = undefined;
     const path_length = sysargs.getString(.a0, &path) catch return UnlinkErrors.FailedGetPath;
 
-    fslog.beginOperation();
-    defer fslog.endOperation();
+    fs.beginOperation();
+    defer fs.endOperation();
 
     var name: []const u8 = undefined;
     const directory_inode = Inode.resolvePathParent(path[0..path_length], &name) orelse return UnlinkErrors.FailedGetParentDir;
@@ -222,7 +221,7 @@ pub fn unlink() UnlinkErrors!void {
 
 const CreateErrors = error{ FailedGetParentDir, PathExistsWithWrongType, FailedAllocateInode, FailedCreateDot, FailedCreateDotDot, FailedLinkParentDir };
 
-fn create(path: []const u8, kind: fs.FileType, device: Device.ID) CreateErrors!*Inode {
+fn create(path: []const u8, kind: Inode.InodeType, device: Device.ID) CreateErrors!*Inode {
     var name: []const u8 = undefined;
     const parent_inode = Inode.resolvePathParent(path, &name) orelse return CreateErrors.FailedGetParentDir;
 
@@ -324,8 +323,8 @@ pub fn open() !usize {
 
     const openMode = try OpenMode.fromUsize(sysargs.getInt(.a1));
 
-    fslog.beginOperation();
-    defer fslog.endOperation();
+    fs.beginOperation();
+    defer fs.endOperation();
 
     const inode = if (openMode.create) try create(path[0..pathLen], .file, .{ .major = 0, .minor = 0 }) else blk: {
         const existingInode = Inode.resolvePath(path[0..pathLen]) orelse return OpenErrors.InvalidPath;
@@ -373,8 +372,8 @@ pub fn sys_mkdir() u64 {
         return sysargs.errorVal;
     };
 
-    fslog.beginOperation();
-    defer fslog.endOperation();
+    fs.beginOperation();
+    defer fs.endOperation();
 
     const inode = create(path[0..pathLen], .directory, .{ .major = 0, .minor = 0 }) catch |err| {
         log.print("could not create dir: {s}", .{@errorName(err)});
@@ -406,8 +405,8 @@ pub fn sys_mknod() u64 {
         return sysargs.errorVal;
     }
 
-    fslog.beginOperation();
-    defer fslog.endOperation();
+    fs.beginOperation();
+    defer fs.endOperation();
 
     const inode = create(path[0..pathLen], .device, .{ .major = @intCast(major), .minor = @intCast(minor) }) catch |err| {
         log.print("could not create node: {s}", .{@errorName(err)});
@@ -434,8 +433,8 @@ pub fn chdir() ChdirErrors!void {
 
     const process = Process.getCurrentForce();
 
-    fslog.beginOperation();
-    defer fslog.endOperation();
+    fs.beginOperation();
+    defer fs.endOperation();
 
     const inode = Inode.resolvePath(path[0..path_size]) orelse return ChdirErrors.InvalidDestPath;
     {
@@ -496,7 +495,7 @@ pub fn exec() !u64 {
         argv[index] = page[0..argLength];
     }
 
-    return execFile.exec(path[0..pathLen], argv[0..index]);
+    return fs.exec(path[0..pathLen], argv[0..index]);
 }
 
 pub fn sys_pipe() u64 {

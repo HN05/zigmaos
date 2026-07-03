@@ -1,7 +1,7 @@
 const kernel = @import("root");
 
-const Buffer = @import("../../buffer.zig");
 const conc = kernel.concurrency;
+const Buffer = kernel.filesystem.Buffer;
 
 pub const sector_size = 512;
 

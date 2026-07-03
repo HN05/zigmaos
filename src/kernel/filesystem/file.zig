@@ -6,9 +6,9 @@ const Inode = @import("inode.zig");
 const Pipe = @import("pipe.zig");
 const Device = @import("device.zig");
 const log = @import("log.zig");
-const ad = @import("address.zig");
-const fs = @import("filesystem.zig");
-const mem = @import("memory.zig");
+const blocks = @import("blocks.zig");
+const ad = @import("../address.zig");
+const mem = @import("../memory.zig");
 
 const Process = kernel.execution.Process;
 const Mutex = kernel.concurrency.Mutex;
@@ -127,7 +127,7 @@ pub fn close(file: *File) void {
 pub fn getStatus(file: *const File, destination_address: ad.UserAddress) !void {
     if (!file.hasInode()) return error.WrongFileType;
 
-    var status: fs.FileStatus = undefined;
+    var status: Inode.FileStatus = undefined;
     // get status
     {
         const inode = file.getInode();
@@ -197,7 +197,7 @@ pub fn write(file: *File, address: ad.UserAddress, write_count: u32) !u32 {
             // and 2 blocks of slop for non-aligned writes.
             // this really belongs lower down, since writei()
             // might be writing a device like the console.
-            const max_bytes = (common.param.max_num_operation_blocks - 1 - 1 - 2) / 2 * fs.block_size;
+            const max_bytes = (common.param.max_num_operation_blocks - 1 - 1 - 2) / 2 * blocks.block_size;
 
             while (bytes_written < write_count) {
                 const bytes_to_write = @min(write_count - bytes_written, max_bytes);

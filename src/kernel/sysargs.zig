@@ -5,10 +5,11 @@ const common = @import("common");
 const log = @import("klog.zig");
 const mem = @import("memory.zig");
 const ad = @import("address.zig");
-const File = @import("file.zig");
 
 const Process = kernel.execution.Process;
 const param = common.param;
+const fs = kernel.filesystem;
+const File = fs.File;
 
 const InputRegister = enum { a0, a1, a2, a3, a4, a5 };
 pub const errorVal = ~@as(u64, 0);

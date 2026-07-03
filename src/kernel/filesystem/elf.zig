@@ -1,5 +1,5 @@
 // Format of an ELF executable file
-const ad = @import("address.zig");
+const ad = @import("../address.zig");
 
 const ElfIdentifier = extern struct {
     pub const correctMagic: u32 = 0x464C457F; // "\x7FELF" in little endian

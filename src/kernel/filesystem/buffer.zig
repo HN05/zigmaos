@@ -17,7 +17,7 @@ const std = @import("std");
 
 const Device = @import("device.zig");
 const Cache = @import("buffer_cache.zig");
-const fs = @import("filesystem.zig");
+const blocks = @import("blocks.zig");
 
 const Mutex = kernel.concurrency.Mutex;
 const drivers = kernel.drivers;
@@ -32,7 +32,7 @@ lock: Mutex = .init(.sleep, "buffer"),
 reference_count: u32 = 0,
 previous: *Buffer = undefined, // LRU cache list
 next: *Buffer = undefined,
-data: [fs.block_size]u8 align(8) = undefined,
+data: [blocks.block_size]u8 align(8) = undefined,
 
 pub fn castData(buffer: *Buffer, comptime T: type) *T {
     return std.mem.bytesAsValue(
@@ -41,7 +41,7 @@ pub fn castData(buffer: *Buffer, comptime T: type) *T {
     );
 }
 
-const cache = &cacheBacking;
+pub const cache = &cacheBacking;
 var cacheBacking = Cache{};
 
 // Return a locked buf with the contents of the indicated block.

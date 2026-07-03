@@ -8,11 +8,7 @@ const kalloc = @import("../kalloc.zig");
 const mem = @import("../memory.zig");
 const ringbuf = @import("../ringbuf.zig");
 const print = @import("../klog.zig").print;
-const File = @import("../file.zig");
-const Inode = @import("../inode.zig");
 const trap = @import("../trap.zig");
-const fs = @import("../filesystem.zig");
-const log = @import("../log.zig");
 const scheduler = @import("scheduler.zig");
 const Cpu = @import("cpu.zig");
 
@@ -20,6 +16,9 @@ const param = common.param;
 const Context = common.riscv.Context;
 const Mutex = kernel.concurrency.Mutex;
 const interrupts = kernel.concurrency.interrupts;
+const fs = kernel.filesystem;
+const Inode = fs.Inode;
+const File = fs.File;
 
 pub var processTable: [param.NPROC]Process = blk: {
     var table: [param.NPROC]Process = undefined;
@@ -313,7 +312,7 @@ fn forkReturn() void {
         // regular process (e.g., because it calls sleep), and thus cannot
         // be run from main().
         first_fork = false;
-        fs.init(.root_fs_device);
+        fs.initFileSystem(.root_fs_device);
     }
     trap.usertrapret();
 }
@@ -415,8 +414,8 @@ pub fn exit(status: i32) void {
 
     // put directory
     {
-        log.beginOperation();
-        defer log.endOperation();
+        fs.beginOperation();
+        defer fs.endOperation();
 
         current_process.currentWorkingDirectory.put();
     }

@@ -24,7 +24,7 @@ const kernel = @import("root");
 const common = @import("common");
 
 const Device = @import("device.zig");
-const fs = @import("filesystem.zig");
+const blocks = @import("blocks.zig");
 const Buffer = @import("buffer.zig");
 
 const execution = kernel.execution;
@@ -45,7 +45,7 @@ const Header = struct {
 };
 
 comptime {
-    if (@sizeOf(Header) > fs.block_size) @compileError("too big logheader");
+    if (@sizeOf(Header) > blocks.block_size) @compileError("too big logheader");
 }
 
 const Log = struct {
@@ -60,7 +60,7 @@ const Log = struct {
 
 var log: Log = undefined;
 
-pub fn init(device: Device.ID, superblock: fs.SuperBlock) void {
+pub fn init(device: Device.ID, superblock: blocks.SuperBlock) void {
     log = .{
         .lock = .init(.spin, "log"),
         .start = superblock.logstart,

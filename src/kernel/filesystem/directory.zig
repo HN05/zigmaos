@@ -1,8 +1,8 @@
 const std = @import("std");
 
 const Inode = @import("inode.zig");
-const fs = @import("filesystem.zig");
-const ad = @import("address.zig");
+const blocks = @import("blocks");
+const ad = @import("../address.zig");
 
 const Directory = @This();
 

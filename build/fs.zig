@@ -1,4 +1,4 @@
-const Device = @import("../src/kernel/device.zig");
+const Device = @import("../src/kernel/filesystem/device.zig");
 
 pub const ROOTINO = 1; // root i-number
 pub const BSIZE = 1024; // block size

@@ -7,10 +7,10 @@ const Kalloc = @import("kalloc.zig");
 const plic = @import("plic.zig");
 const trap = @import("trap.zig");
 const memory = @import("memory.zig");
-const Buffer = @import("buffer.zig");
 
 const execution = kernel.execution;
 const drivers = kernel.drivers;
+const fs = kernel.filesystem;
 const log = std.log.scoped(.kmain);
 const riscv = common.riscv;
 
@@ -26,7 +26,7 @@ pub fn kernelMain() void {
         trap.initHart(); // install kernel trap vector
         plic.init(); // set up interrupt controller
         plic.initHart(); // ask PLIC for device interrupts
-        Buffer.cache.init_array(); // buffer cache
+        fs.initBufferCache(); // buffer cache
         drivers.disk.init(); // emulated hard disk
         execution.Process.initFirstUser(); // first user process
         started.store(true, .seq_cst);

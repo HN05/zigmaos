@@ -13,11 +13,12 @@ const std = @import("std");
 
 const uart = @import("uart.zig");
 const mem = @import("../memory.zig");
-const Device = @import("../device.zig");
 const ad = @import("../address.zig");
 
 const execution = kernel.execution;
 const conc = kernel.concurrency;
+const fs = kernel.filesystem;
+const Device = fs.Device;
 
 fn control(char: u8) u8 {
     return char - '@';
