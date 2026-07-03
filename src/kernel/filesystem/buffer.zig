@@ -14,12 +14,13 @@
 //     so do not keep them longer than necessary.
 const kernel = @import("root");
 const std = @import("std");
-const common = @import("common");
 
 const Device = @import("device.zig");
-const drivers = kernel.drivers;
+const Cache = @import("buffer_cache.zig");
 const fs = @import("filesystem.zig");
-const conc = kernel.concurrency;
+
+const Mutex = kernel.concurrency.Mutex;
+const drivers = kernel.drivers;
 
 const Buffer = @This();
 
@@ -27,7 +28,7 @@ is_valid: bool = false, // has data been read from disk?
 disk_owned: bool = undefined, // does disk "own" buf?
 device: Device.ID = undefined,
 block_number: u32 = undefined,
-lock: conc.Mutex = .init(.sleep, "buffer"),
+lock: Mutex = .init(.sleep, "buffer"),
 reference_count: u32 = 0,
 previous: *Buffer = undefined, // LRU cache list
 next: *Buffer = undefined,
@@ -40,64 +41,7 @@ pub fn castData(buffer: *Buffer, comptime T: type) *T {
     );
 }
 
-// cache
-const Cache = struct {
-    lock: conc.Mutex = .init(.spin, "bcache"),
-    buffer_array: [common.param.NBUF]Buffer = undefined, // undefined until calling init_array
-
-    // Linked list of all buffers, through prev/next.
-    // Sorted by how recently the buffer was used.
-    // head.next is most recent, head.prev is least.
-    head: Buffer = .{},
-
-    pub fn init_array(self: *Cache) void {
-        // Create linked list of buffers
-        self.head.previous = &self.head;
-        self.head.next = &self.head;
-
-        for (&self.buffer_array) |*buffer| {
-            buffer.* = .{};
-            buffer.next = self.head.next;
-            buffer.previous = &self.head;
-            self.head.next.previous = buffer;
-            self.head.next = buffer;
-        }
-    }
-
-    // Look through buffer cache for block on device dev.
-    // If not found, allocate a buffer.
-    // In either case, return locked buffer.
-    pub fn get_buffer(self: *Cache, device: Device.ID, block_number: u32) *Buffer {
-        self.lock.acquire();
-        var current_buffer = self.head.next;
-        defer current_buffer.lock.acquire(); // acquire lock before returning
-        defer self.lock.release(); // release before acquiring sleep lock
-
-        // Is the block already cached?
-        while (current_buffer != &self.head) : (current_buffer = current_buffer.next) {
-            if (current_buffer.device == device and current_buffer.block_number == block_number) {
-                current_buffer.reference_count += 1;
-                return current_buffer;
-            }
-        }
-        // Not cached.
-        // Recycle the least recently used (LRU) unused buffer.
-        current_buffer = self.head.previous;
-        while (current_buffer != &self.head) : (current_buffer = current_buffer.previous) {
-            if (current_buffer.reference_count == 0) {
-                current_buffer.device = device;
-                current_buffer.block_number = block_number;
-                current_buffer.is_valid = false;
-                current_buffer.reference_count = 1;
-                return current_buffer;
-            }
-        }
-
-        @panic("get_buffer: no buffers");
-    }
-};
-
-pub const cache = &cacheBacking;
+const cache = &cacheBacking;
 var cacheBacking = Cache{};
 
 // Return a locked buf with the contents of the indicated block.
