@@ -5,19 +5,8 @@ const Buffer = @import("buffer.zig");
 const log = @import("log.zig");
 const Inode = @import("inode.zig");
 
-pub const FileType = enum(u16) { free = 0, directory = 1, file = 2, device = 3 };
-
-pub const FileStatus = extern struct {
-    device: Device.ID,
-    inode_number: u32,
-    type: FileType,
-    link_count: u16,
-    size: u64,
-};
-
 pub const root_inode_number = 1;
 pub const block_size = 1024;
-pub const fs_magic = 0x10203040;
 
 // Disk layout:
 // [ boot block | super block | log | inode blocks |
@@ -34,6 +23,12 @@ pub const SuperBlock = extern struct {
     logstart: u32, // Block number of first log block
     inodestart: u32, // Block number of first inode block
     bmapstart: u32, // Block number of first free map block
+
+    const correct_magic = 0x10203040;
+
+    pub fn hasCorrectMagic(self: *SuperBlock) bool {
+        return self.magic == correct_magic;
+    }
 };
 
 const BlockBitmap = struct {
@@ -110,7 +105,7 @@ fn readSuperBlock(device: Device.ID, superBlockDestination: *SuperBlock) void {
 // Init fs
 pub fn init(device: Device.ID) void {
     readSuperBlock(device, &superBlock);
-    if (superBlock.magic != fs_magic) @panic("invalid file system");
+    if (!superBlock.hasCorrectMagic()) @panic("invalid file system");
     log.init(device, superBlock);
 }
 
@@ -122,8 +117,6 @@ fn zeroBlock(device: Device.ID, block_number: u32) void {
     @memset(&buffer.data, 0);
     log.write(buffer);
 }
-
-// Blocks.
 
 // Allocate a zeroed disk block.
 pub fn blockAllocate(device: Device.ID) !u32 {

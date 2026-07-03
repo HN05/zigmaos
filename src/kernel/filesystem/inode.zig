@@ -109,12 +109,22 @@ is_valid: bool = false,
 
 disk_inode: DiskInode = .{},
 
+pub const InodeType = enum(u16) { free = 0, directory = 1, file = 2, device = 3 };
+
+pub const FileStatus = extern struct {
+    device: Device.ID,
+    inode_number: u32,
+    type: InodeType,
+    link_count: u16,
+    size: u64,
+};
+
 // On-disk inode structure
 pub const DiskInode = extern struct {
     device: Device.ID = .zero,
     size: u32 = 0, // Size of file (bytes)
     addrs: [inode_address_count]u32 = [_]u32{0} ** inode_address_count, // Data block addresses
-    type: fs.FileType = .free, // File type
+    type: InodeType = .free, // File type
     link_count: u16 = 0, // Number of links to inode in file system
 };
 
