@@ -116,7 +116,7 @@ pub fn build(b: *std.Build) !void {
     const kernel = b.addExecutable(.{ .name = "kernel", .root_module = kernel_mod });
     kernel.setLinkerScript(b.path(kernel_linker));
     kernel.entry = .{ .symbol_name = "_entry" };
-    kernel.lto = .thin;
+    kernel.lto = .none;
 
     b.installArtifact(kernel);
 
