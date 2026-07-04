@@ -5,7 +5,7 @@ const common = @import("common");
 const csr = @import("csr.zig");
 const print = @import("klog.zig").print;
 const plic = @import("plic.zig");
-const ticks = @import("ticks.zig").ticks;
+const cpu_ticks = @import("ticks.zig").cpu_ticks;
 const syscall = @import("syscall.zig");
 
 const execution = kernel.execution;
@@ -194,7 +194,7 @@ fn handleDeviceInterrupt(scause: csr.Scause) void {
             // software interrupt from a machine-mode timer interrupt,
             // forwarded by timervec in kernelvec.S.
             if (execution.Cpu.getCurrentId() == 0) {
-                ticks.incrementSafe();
+                cpu_ticks.incrementSafe();
             }
             // acknowledge the software interrupt by clearing
             // the SSIP bit in sip.

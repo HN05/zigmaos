@@ -2,7 +2,7 @@ const kernel = @import("root");
 
 const log = @import("klog.zig");
 const sysargs = @import("sysargs.zig");
-const ticks = @import("ticks.zig").ticks;
+const cpu_ticks = @import("ticks.zig").cpu_ticks;
 
 const Process = kernel.execution.Process;
 
@@ -36,7 +36,7 @@ pub fn sys_sbrk() u64 {
 pub fn sys_sleep() u64 {
     const sleepTicks = sysargs.getInt(.a0);
 
-    ticks.sleepFor(sleepTicks) catch {
+    cpu_ticks.sleepFor(sleepTicks) catch {
         return sysargs.errorVal;
     };
 
@@ -50,5 +50,5 @@ pub fn sys_kill() u64 {
 }
 
 pub fn sys_uptime() u64 {
-    return ticks.readSafe();
+    return cpu_ticks.readSafe();
 }
