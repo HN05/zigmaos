@@ -9,7 +9,8 @@ const kernel = @import("root");
 const common = @import("common");
 
 const sysargs = @import("sysargs.zig");
-const log = @import("debuglog.zig");
+const log = @import("../debuglog.zig");
+const ringbuf = @import("../ringbuf.zig");
 
 const mem = kernel.memory;
 const ad = mem.address;
@@ -527,4 +528,29 @@ pub fn pipe() !void {
 
     mem.boundry.copyOut(process.pageTable, fileDescArray, std.mem.asBytes(&readFileDescriptor)) catch return PipeErrors.FailedToOutputFirstFd;
     mem.boundry.copyOut(process.pageTable, fileDescArray.add(@sizeOf(c_int)), std.mem.asBytes(&writeFileDescriptor)) catch return PipeErrors.FailedToOutputSecondFd;
+}
+
+pub fn sys_ringbuf() u64 {
+    fs.beginOperation();
+    defer fs.endOperation();
+
+    var buffer: [ringbuf.MAX_NAME_LEN]u8 = undefined;
+
+    const len = sysargs.getString(.a0, &buffer) catch {
+        // sys_FOO C functions return a uint64 yet return -1 on errors
+        // Zig has stricter rules about implicit casts + overflow and underflow,
+        // so we'll need to return a bitcasted negative on errors
+        return @bitCast(common.ringbuf.intFromErr(common.ringbuf.RingbufError, error.BadNameLength));
+    };
+
+    const name: []const u8 = buffer[0..len];
+    const do_open = sysargs.getInt(.a1);
+    const addr = sysargs.getAddress(.a2) orelse {
+        return @bitCast(common.ringbuf.intFromErr(common.ringbuf.RingbufError, error.NoAddrGiven));
+    };
+
+    ringbuf.ringbuf(name, @enumFromInt(do_open), addr) catch |err| {
+        return @bitCast(common.ringbuf.intFromErr(common.ringbuf.RingbufError, err));
+    };
+    return 0;
 }

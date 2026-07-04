@@ -1,10 +1,9 @@
 const kernel = @import("root");
 const std = @import("std");
 
-const log = @import("klog.zig");
+const log = @import("../klog.zig");
 const procsyscalls = @import("sysproc.zig");
 const filesyscalls = @import("sysfile.zig");
-const ringbuf = @import("ringbuf.zig");
 const SyscallNum = @import("syscallnum.zig").SyscallNum;
 
 const execution = kernel.execution;
@@ -25,7 +24,7 @@ pub fn handler() void {
         .fork => procsyscalls.sys_fork(),
         .fstat => filesyscalls.sys_fstat(),
         .getpid => procsyscalls.sys_getpid(),
-        .ringbuf => ringbuf.syscall(),
+        .ringbuf => filesyscalls.sys_ringbuf(),
         .wait => procsyscalls.sys_wait(),
         .kill => procsyscalls.sys_kill(),
         .link => filesyscalls.sys_link(),

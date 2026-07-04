@@ -4,7 +4,7 @@ const std = @import("std");
 const mem = std.mem;
 const SyscallGenStep = @This();
 const Step = std.Build.Step;
-const SyscallNums = @import("../src/kernel/syscallnum.zig").SyscallNum;
+const SyscallNums = @import("../src/kernel/traps/syscallnum.zig").SyscallNum;
 
 step: Step,
 output_file: std.Build.GeneratedFile,

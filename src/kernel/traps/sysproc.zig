@@ -1,8 +1,8 @@
 const kernel = @import("root");
 
-const log = @import("klog.zig");
+const log = @import("../klog.zig");
 const sysargs = @import("sysargs.zig");
-const cpu_ticks = @import("ticks.zig").cpu_ticks;
+const cpu_ticks = @import("../ticks.zig").cpu_ticks;
 
 const Process = kernel.execution.Process;
 

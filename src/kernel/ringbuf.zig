@@ -17,8 +17,8 @@ const Mutex = kernel.concurrency.Mutex;
 
 // we expose these in common because they will be usIed by the user lib
 const RINGBUF_SIZE = com.ringbuf.RINGBUF_SIZE;
-const MAX_NAME_LEN = com.ringbuf.MAX_NAME_LEN;
 const MAX_RINGBUFS = com.ringbuf.MAX_RINGBUFS;
+pub const MAX_NAME_LEN = com.ringbuf.MAX_NAME_LEN;
 
 const RingbufManager = @This();
 
@@ -149,7 +149,7 @@ fn findRingbufByName(name: []const u8) ?*Ringbuf {
 ///
 ///  We use the process's top_free_uvm_pg to find a slot in the userspace.
 ///  We map the ringbuf twice contiguously, and the book page right under it.
-fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError!void {
+pub fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError!void {
     lock.acquire();
     defer lock.release();
 
@@ -266,32 +266,6 @@ fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError
             }
         },
     }
-}
-
-const sysargs = @import("sysargs.zig");
-pub fn syscall() u64 {
-    fs.beginOperation();
-    defer fs.endOperation();
-
-    var buffer: [MAX_NAME_LEN]u8 = undefined;
-
-    const len = sysargs.getString(.a0, &buffer) catch {
-        // sys_FOO C functions return a uint64 yet return -1 on errors
-        // Zig has stricter rules about implicit casts + overflow and underflow,
-        // so we'll need to return a bitcasted negative on errors
-        return @bitCast(com.ringbuf.intFromErr(com.ringbuf.RingbufError, error.BadNameLength));
-    };
-
-    const name: []const u8 = buffer[0..len];
-    const open = sysargs.getInt(.a1);
-    const addr = sysargs.getAddress(.a2) orelse {
-        return @bitCast(com.ringbuf.intFromErr(com.ringbuf.RingbufError, error.NoAddrGiven));
-    };
-
-    ringbuf(name, @enumFromInt(open), addr) catch |err| {
-        return @bitCast(com.ringbuf.intFromErr(com.ringbuf.RingbufError, err));
-    };
-    return 0;
 }
 
 fn find_owned_ringbuf(proc: *Process) ?*Ringbuf {

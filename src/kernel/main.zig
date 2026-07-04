@@ -4,9 +4,9 @@ const common = @import("common");
 
 const log_root = @import("klog.zig");
 const plic = @import("plic.zig");
-const trap = @import("trap.zig");
 
 const execution = kernel.execution;
+const traps = kernel.traps;
 const mem = kernel.memory;
 const drivers = kernel.drivers;
 const fs = kernel.filesystem;
@@ -22,7 +22,7 @@ pub fn kernelMain() void {
         mem.allocation.init(); // set up allocator (zig)
         mem.kernel.initPageTable(); // create kernel page table
         mem.kernel.enablePaging(); // turn on paging
-        trap.initHart(); // install kernel trap vector
+        traps.initHart(); // install kernel trap vector
         plic.init(); // set up interrupt controller
         plic.initHart(); // ask PLIC for device interrupts
         fs.initBufferCache(); // buffer cache
@@ -34,7 +34,7 @@ pub fn kernelMain() void {
 
         log.info("hart {d} starting", .{execution.Cpu.getCurrentId()});
         mem.kernel.enablePaging(); // turn on paging
-        trap.initHart(); // install kernel trap vector
+        traps.initHart(); // install kernel trap vector
         plic.initHart(); // ask PLIC for device interrupts
     }
     execution.scheduler.loop();

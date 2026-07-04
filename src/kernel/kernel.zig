@@ -4,6 +4,7 @@ pub const execution = @import("execution/mod.zig");
 pub const drivers = @import("drivers/mod.zig");
 pub const filesystem = @import("filesystem/mod.zig");
 pub const memory = @import("memory/mod.zig");
+pub const traps = @import("traps/mod.zig");
 
 // for starting kernel
 const std = @import("std");

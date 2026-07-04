@@ -2,10 +2,10 @@ const kernel = @import("root");
 const std = @import("std");
 const common = @import("common");
 
-const csr = @import("csr.zig");
-const print = @import("klog.zig").print;
-const plic = @import("plic.zig");
-const cpu_ticks = @import("ticks.zig").cpu_ticks;
+const csr = @import("../csr.zig");
+const print = @import("../klog.zig").print;
+const plic = @import("../plic.zig");
+const cpu_ticks = @import("../ticks.zig").cpu_ticks;
 const syscall = @import("syscall.zig");
 
 const execution = kernel.execution;

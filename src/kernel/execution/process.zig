@@ -4,13 +4,13 @@ const std = @import("std");
 
 const ringbuf = @import("../ringbuf.zig");
 const print = @import("../klog.zig").print;
-const trap = @import("../trap.zig");
 const scheduler = @import("scheduler.zig");
 const Cpu = @import("cpu.zig");
 
 const mem = kernel.memory;
 const ad = mem.address;
 const ml = mem.layout;
+const traps = kernel.traps;
 const allocation = mem.allocation;
 const page_size = mem.pages.page_size;
 const param = common.param;
@@ -293,7 +293,7 @@ fn forkReturn() void {
         first_fork = false;
         fs.initFileSystem(.root_fs_device);
     }
-    trap.usertrapret();
+    traps.usertrapret();
 }
 
 // Grow or shrink user memory by n bytes.
