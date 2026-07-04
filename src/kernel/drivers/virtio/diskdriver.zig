@@ -7,16 +7,18 @@
 
 const kernel = @import("root");
 
-const ml = @import("../../memlayout.zig");
-const ad = @import("../../address.zig");
-const alloc = @import("../../kalloc.zig");
 const Disk = @import("disk.zig");
 const mmio = @import("mmio.zig");
 
+const mem = kernel.memory;
+const alloc = mem.allocation;
+const ml = mem.layout;
+const ad = mem.address;
 const Queue = Disk.DiskQueue;
 const execution = kernel.execution;
 const fs = kernel.filesystem;
 const Buffer = fs.Buffer;
+const page_size = mem.pages.page_size;
 
 var disk: Disk = undefined;
 
@@ -66,16 +68,16 @@ pub fn init() void {
     // allocate and zero queue memory.
     //  TODO: allocate memory more effectivly
     comptime {
-        if (@sizeOf([Queue.size]Queue.Descriptor) > ad.page_size)
+        if (@sizeOf([Queue.size]Queue.Descriptor) > page_size)
             @compileError("descriptor table does not fit in one page");
-        if (@sizeOf(Queue.Available) > ad.page_size)
+        if (@sizeOf(Queue.Available) > page_size)
             @compileError("available ring does not fit in one page");
-        if (@sizeOf(Queue.Used) > ad.page_size)
+        if (@sizeOf(Queue.Used) > page_size)
             @compileError("used ring does not fit in one page");
     }
-    const descriptor: *[Queue.size]Queue.Descriptor = @ptrCast(alloc.allocZeroedPageForce());
-    const available: *Queue.Available = @ptrCast(alloc.allocZeroedPageForce());
-    const used: *Queue.Used = @ptrCast(alloc.allocZeroedPageForce());
+    const descriptor: *[Queue.size]Queue.Descriptor = @ptrCast(alloc.allocPageForce(.zeroed));
+    const available: *Queue.Available = @ptrCast(alloc.allocPageForce(.zeroed));
+    const used: *Queue.Used = @ptrCast(alloc.allocPageForce(.zeroed));
 
     // set queue size.
     mmio.Queue.setSize(Queue.size);

@@ -2,16 +2,17 @@ const kernel = @import("root");
 const common = @import("common");
 const std = @import("std");
 
-const ad = @import("../address.zig");
-const ml = @import("../memlayout.zig");
-const kalloc = @import("../kalloc.zig");
-const mem = @import("../memory.zig");
 const ringbuf = @import("../ringbuf.zig");
 const print = @import("../klog.zig").print;
 const trap = @import("../trap.zig");
 const scheduler = @import("scheduler.zig");
 const Cpu = @import("cpu.zig");
 
+const mem = kernel.memory;
+const ad = mem.address;
+const ml = mem.layout;
+const allocation = mem.allocation;
+const page_size = mem.pages.page_size;
 const param = common.param;
 const Context = common.riscv.Context;
 const Mutex = kernel.concurrency.Mutex;
@@ -40,15 +41,15 @@ pub var waitLock: Mutex = .init(.spin, "wait_lock");
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
-pub fn mapKernelStacks(kernelPageTable: ad.PageTablePtr) void {
+pub fn mapKernelStacks(map_func: *const fn (ad.UserAddress, ad.KernelAddress, usize, mem.pages.MappingKind) void) void {
     inline for (0..processTable.len) |index| {
         const virtualAddress = ml.KSTACK(index);
 
         inline for (0..ml.kernel_stack_page_count) |i| {
-            const virtual_page_address = virtualAddress.add(i * ad.page_size);
+            const virtual_page_address = virtualAddress.add(i * mem.pages.page_size);
 
-            const physical_page = kalloc.allocPage() orelse @panic("could not map stacks: kalloc");
-            mem.kernelVirtualMap(kernelPageTable, virtual_page_address, .fromPtr(physical_page), ad.page_size, .{ .write = true, .read = true }) catch @panic("could not map process kernel stack");
+            const physical_page = allocation.allocPage(.garbage) orelse @panic("could not get mem to map stacks");
+            map_func(virtual_page_address, .fromPtr(physical_page), mem.pages.page_size, .data);
         }
     }
 }
@@ -103,7 +104,7 @@ pub const TrapFrame = extern struct {
     t5: u64,
     t6: u64,
 
-    pub fn asPagePointer(self: *TrapFrame) ad.PagePointer {
+    pub fn asPagePointer(self: *TrapFrame) mem.pages.PagePointer {
         return @ptrCast(@alignCast(self));
     }
 };
@@ -134,8 +135,8 @@ parentProcess: ?*Process = null, // null for root process
 // these are private to the process, so p->lock need not be held.
 kernelStackAddress: ad.UserAddress, // Virtual address of kernel stack
 size: usize = 0, // Size of process memory (bytes)
-pageTable: ad.PageTablePtr = undefined, // User page table
-topFreeVirtualPage: ad.UserAddress = ml.trapframe_virtual_address.sub(2 * ad.page_size), // The highest free user virtual mem page. Starts at TRAPFRAME - 2*PGSIZE and goes down as pages are used.
+pageTable: mem.pages.PageTablePtr = undefined, // User page table
+topFreeVirtualPage: ad.UserAddress = ml.trapframe_virtual_address.sub(2 * page_size), // The highest free user virtual mem page. Starts at TRAPFRAME - 2*PGSIZE and goes down as pages are used.
 trapFrame: *TrapFrame = undefined, // data page for trampoline.S
 context: Context = undefined, // switchContext() here to run process
 openFiles: [param.NOFILE]?*File = [_]?*File{null} ** param.NOFILE, // Open files
@@ -178,17 +179,17 @@ fn init(process: *Process) !void {
     process.state_unsafe = .used;
 
     // Allocate a trapframe page.
-    const trap_page = kalloc.allocPage() orelse return error.FailedMemAllocate;
+    const trap_page = allocation.allocPage(.garbage) orelse return error.FailedMemAllocate;
     process.trapFrame = @ptrCast(trap_page);
     process.allocatedTrapFrame = true;
 
     // An empty user page table.
-    process.pageTable = try createPagetable(process);
+    process.pageTable = try mem.user.createPagetable(.fromPtr(process.trapFrame));
     process.allocatedPageTable = true;
 
     // Set up new context to start executing at forkret,
     // which returns to user space.
-    const sp = process.kernelStackAddress.add(ml.kernel_stack_page_count * ad.page_size);
+    const sp = process.kernelStackAddress.add(ml.kernel_stack_page_count * page_size);
     process.context = .{
         .ra = @intFromPtr(&forkReturn),
         .sp = sp.toInt(),
@@ -219,15 +220,15 @@ fn free(process: *Process) void {
         ringbuf.ringbuf_disown_all(process);
     }
     if (process.allocatedTrapFrame) {
-        kalloc.freePage(process.trapFrame.asPagePointer()) catch @panic("could not free trapframe");
+        allocation.freePage(process.trapFrame.asPagePointer()) catch @panic("could not free trapframe");
         process.allocatedTrapFrame = false;
     }
 
     if (process.allocatedPageTable) {
-        mem.freePageTable(process.pageTable, process.size);
+        mem.user.freePageTable(process.pageTable, process.size);
         process.allocatedPageTable = false;
     }
-    process.topFreeVirtualPage = ml.trapframe_virtual_address.sub(2 * ad.page_size);
+    process.topFreeVirtualPage = ml.trapframe_virtual_address.sub(2 * page_size);
     process.size = 0;
     process.ownedRingbufsCount = 0;
     process.pid_unsafe = 0;
@@ -237,28 +238,6 @@ fn free(process: *Process) void {
     process.is_killed_unsafe = false;
     process.exit_status_unsafe = 0;
     process.state_unsafe = .unused;
-}
-
-// Create a user page table for a given process, with no user memory,
-// but with trampoline and trapframe pages.
-pub fn createPagetable(process: *Process) !ad.PageTablePtr {
-    // An empty page table.
-    const pageTable = try mem.uvmCreate();
-    errdefer mem.uvmFree(pageTable, 0);
-
-    // map the trampoline code (for system call return)
-    // at the highest user virtual address.
-    // only the supervisor uses it, on the way
-    // to/from user space, so not PTE_U.
-    try mem.kernelVirtualMap(pageTable, ml.trampoline_virtual_address, ml.trampolinePhysicalAddress(), ad.page_size, .{ .read = true, .execute = true });
-    errdefer mem.uvmUnmap(pageTable, ml.trampoline_virtual_address, 1, false);
-
-    // map the trapframe page just below the trampoline page, for
-    // trampoline.S.
-    try mem.kernelVirtualMap(pageTable, ml.trapframe_virtual_address, .fromPtr(process.trapFrame), ad.page_size, .{ .read = true, .write = true });
-    errdefer mem.uvmUnmap(pageTable, ml.trapframe_virtual_address, 1, false);
-
-    return pageTable;
 }
 
 // a user program that calls exec("/init")
@@ -284,12 +263,12 @@ pub fn initFirstUser() void {
 
     // allocate one user page and copy initcode's instructions
     // and data into it.
-    mem.uvmFirst(initialProcess.pageTable, initcode[0..]);
-    initialProcess.size = ad.page_size;
+    mem.user.loadFirstProcess(initialProcess.pageTable, initcode[0..]);
+    initialProcess.size = page_size;
 
     // prepare for the very first "return" from kernel to user.
     initialProcess.trapFrame.epc = 0; // user program counter
-    initialProcess.trapFrame.sp = ad.page_size; // user stack pointer
+    initialProcess.trapFrame.sp = page_size; // user stack pointer
 
     const name = "initcode";
     @memcpy(initialProcess.nameBuffer[0..name.len], name);
@@ -323,9 +302,9 @@ pub fn changeProcessSize(size_diff: i64) !void {
     const old_size = current.size;
     const abs_size_diff: usize = @abs(size_diff);
     if (size_diff > 0) {
-        current.size = try mem.uvmAlloc(current.pageTable, old_size, old_size + abs_size_diff, .{ .read = true, .write = true });
+        current.size = try mem.user.alloc(current.pageTable, old_size, old_size + abs_size_diff, .{ .read = true, .write = true });
     } else if (size_diff < 0) {
-        current.size = mem.uvmDealloc(current.pageTable, old_size, old_size - abs_size_diff);
+        current.size = mem.user.dealloc(current.pageTable, old_size, old_size - abs_size_diff);
     }
 }
 
@@ -343,7 +322,7 @@ pub fn fork() !u32 {
         errdefer child_process.free();
 
         // Copy user memory from parent to child.
-        try mem.uvmCopy(parent_process.pageTable, child_process.pageTable, parent_process.size);
+        try mem.user.copyPageTable(parent_process.pageTable, child_process.pageTable, parent_process.size);
         child_process.size = parent_process.size;
 
         // copy saved user registers.
@@ -461,7 +440,7 @@ pub fn wait(exit_status_destination: ?ad.UserAddress) !u32 {
             if (process.state_unsafe == .zombie) {
                 // Found one.
                 if (exit_status_destination) |destination| {
-                    try mem.copyOut(current_process.pageTable, destination, std.mem.asBytes(&process.exit_status_unsafe));
+                    try mem.boundry.copyOut(current_process.pageTable, destination, std.mem.asBytes(&process.exit_status_unsafe));
                 }
                 const pid = process.pid_unsafe;
                 process.free();

@@ -12,10 +12,11 @@ const kernel = @import("root");
 const std = @import("std");
 
 const uart = @import("uart.zig");
-const mem = @import("../memory.zig");
-const ad = @import("../address.zig");
 
 const execution = kernel.execution;
+const mem = kernel.memory;
+const ad = mem.address;
+const boundry = mem.boundry;
 const conc = kernel.concurrency;
 const fs = kernel.filesystem;
 const Device = fs.Device;
@@ -67,7 +68,7 @@ fn write(source_address: ad.AnyAddress, length: u32) Device.WriteErrors!u32 {
         var char: u8 = undefined;
 
         // breaks if fails
-        mem.eitherCopyIn(source_address.add(chars_written), std.mem.asBytes(&char)) catch break;
+        boundry.eitherCopyIn(source_address.add(chars_written), std.mem.asBytes(&char)) catch break;
 
         uart.putCharacter(char);
     }
@@ -116,7 +117,7 @@ fn read(destination_address: ad.AnyAddress, length: u32) Device.ReadErrors!u32 {
         // copy the input byte to the user-space buffer.
         characterBuffer = character;
 
-        mem.eitherCopyOut(current_address, std.mem.asBytes(&characterBuffer)) catch break;
+        boundry.eitherCopyOut(current_address, std.mem.asBytes(&characterBuffer)) catch break;
 
         current_address = current_address.add(1);
         charsLeft -= 1;

@@ -1,5 +1,7 @@
-const ad = @import("../../address.zig");
-const ml = @import("../../memlayout.zig");
+const kernel = @import("root");
+
+const ml = kernel.memory.layout;
+const KernelAddress = kernel.memory.address.KernelAddress;
 
 // virtio mmio control registers, mapped starting at 0x10001000.
 // from qemu virtio_mmio.h
@@ -16,7 +18,7 @@ pub const Register = struct {
     offset: usize,
     access: Access,
 
-    pub fn getAddress(self: Register) ad.KernelAddress {
+    pub fn getAddress(self: Register) KernelAddress {
         return ml.virtio0_base_address.add(self.offset);
     }
 
@@ -195,7 +197,7 @@ pub const AddressRegister = struct {
         return .{ .low = Register{ .offset = offset, .access = access }, .high = Register{ .offset = offset + 4, .access = access } };
     }
 
-    pub fn write(self: AddressRegister, address: ad.KernelAddress) void {
+    pub fn write(self: AddressRegister, address: KernelAddress) void {
         const value = address.toInt();
         self.low.write(@truncate(value));
         self.high.write(@truncate(value >> 32));

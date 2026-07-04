@@ -3,14 +3,14 @@ const std = @import("std");
 const common = @import("common");
 
 const csr = @import("csr.zig");
-const memlayout = @import("memlayout.zig");
 const print = @import("klog.zig").print;
 const plic = @import("plic.zig");
 const ticks = @import("ticks.zig").ticks;
-const ad = @import("address.zig");
 const syscall = @import("syscall.zig");
 
 const execution = kernel.execution;
+const page_size = kernel.memory.pages.page_size;
+const memlayout = kernel.memory.layout;
 const drivers = kernel.drivers;
 const conc = kernel.concurrency;
 const Process = execution.Process;
@@ -104,7 +104,7 @@ pub fn usertrapret() void {
     // the process next traps into the kernel.
     const trapframe: *Process.TrapFrame = process.trapFrame;
     trapframe.kernel_satp = csr.Satp.readInt(); // kernel page table
-    trapframe.kernel_sp = process.kernelStackAddress.toInt() + memlayout.kernel_stack_page_count * riscv.page_size; // process's kernel stack
+    trapframe.kernel_sp = process.kernelStackAddress.toInt() + memlayout.kernel_stack_page_count * page_size; // process's kernel stack
     trapframe.kernel_trap = @intFromPtr(&usertrap);
     trapframe.kernel_hartid = riscv.Register.read(.tp); // hartid for cpuid()
 

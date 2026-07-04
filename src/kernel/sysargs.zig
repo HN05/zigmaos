@@ -3,9 +3,9 @@ const std = @import("std");
 const common = @import("common");
 
 const log = @import("klog.zig");
-const mem = @import("memory.zig");
-const ad = @import("address.zig");
 
+const mem = kernel.memory;
+const UserAddress = mem.address.UserAddress;
 const Process = kernel.execution.Process;
 const param = common.param;
 const fs = kernel.filesystem;
@@ -32,7 +32,7 @@ const AddressNullErr = error{IsNull};
 // Retrieve an argument as a pointer.
 // Doesn't check for legality, since
 // copyin/copyout will do that.
-pub fn getAddress(register: InputRegister) ?ad.UserAddress {
+pub fn getAddress(register: InputRegister) ?UserAddress {
     const int = getInt(register);
     if (int == 0) return null;
     return .fromInt(int);
@@ -97,7 +97,7 @@ pub fn fileDescriptorAllocate(file: *File) FileDescriptorAllocateErrors!usize {
 const FetchAddressErrors = error{ AddressOutOfBounds, FailedCopyInToKernel };
 
 // Fetch the pointer at addr from the current process.
-pub fn fetchAddr(address: ad.UserAddress, destination: *ad.UserAddress) FetchAddressErrors!void {
+pub fn fetchAddr(address: UserAddress, destination: *UserAddress) FetchAddressErrors!void {
     const process = Process.getCurrentForce();
 
     // double comparison in case of overflow
@@ -105,13 +105,13 @@ pub fn fetchAddr(address: ad.UserAddress, destination: *ad.UserAddress) FetchAdd
         return FetchAddressErrors.AddressOutOfBounds;
     }
 
-    mem.copyIn(process.pageTable, std.mem.asBytes(&destination.value), address) catch return FetchAddressErrors.FailedCopyInToKernel;
+    mem.boundry.copyIn(process.pageTable, std.mem.asBytes(&destination.value), address) catch return FetchAddressErrors.FailedCopyInToKernel;
 }
 
 // Fetch the nul-terminated string at addr from the current process.
 // Returns length of string, not including nul
 // may not include null terminator
-pub fn getStringFromAddress(address: ad.UserAddress, buffer: []u8) !usize {
+pub fn getStringFromAddress(address: UserAddress, buffer: []u8) !usize {
     const process = Process.getCurrentForce();
-    return mem.copyInString(process.pageTable, buffer, address);
+    return mem.boundry.copyInString(process.pageTable, buffer, address);
 }

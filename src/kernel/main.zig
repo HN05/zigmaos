@@ -3,12 +3,11 @@ const std = @import("std");
 const common = @import("common");
 
 const log_root = @import("klog.zig");
-const Kalloc = @import("kalloc.zig");
 const plic = @import("plic.zig");
 const trap = @import("trap.zig");
-const memory = @import("memory.zig");
 
 const execution = kernel.execution;
+const mem = kernel.memory;
 const drivers = kernel.drivers;
 const fs = kernel.filesystem;
 const log = std.log.scoped(.kmain);
@@ -20,9 +19,9 @@ pub fn kernelMain() void {
     if (execution.Cpu.getCurrentId() == 0) {
         drivers.console.init();
         log.info("xv6 kernel is booting", .{});
-        Kalloc.kinit(); // set up allocator (zig)
-        memory.kernelMemoryInit(); // create kernel page table
-        memory.kernelMemoryHartInit(); // turn on paging
+        mem.allocation.init(); // set up allocator (zig)
+        mem.kernel.initPageTable(); // create kernel page table
+        mem.kernel.enablePaging(); // turn on paging
         trap.initHart(); // install kernel trap vector
         plic.init(); // set up interrupt controller
         plic.initHart(); // ask PLIC for device interrupts
@@ -34,7 +33,7 @@ pub fn kernelMain() void {
         while (!started.load(.seq_cst)) {}
 
         log.info("hart {d} starting", .{execution.Cpu.getCurrentId()});
-        memory.kernelMemoryHartInit(); // turn on paging
+        mem.kernel.enablePaging(); // turn on paging
         trap.initHart(); // install kernel trap vector
         plic.initHart(); // ask PLIC for device interrupts
     }
@@ -44,6 +43,6 @@ pub fn kernelMain() void {
 // overrides the root page allocator
 pub const os = struct {
     heap: struct {
-        page_allocator: std.mem.Allocator = Kalloc.page_allocator,
+        page_allocator: std.mem.Allocator = mem.allocation.page_allocator,
     },
 };

@@ -1,12 +1,11 @@
 const kernel = @import("root");
 
 const File = @import("file.zig");
-const memalloc = @import("../kalloc.zig");
-const ad = @import("../address.zig");
-const mem = @import("../memory.zig");
 
 const conc = kernel.concurrency;
+const mem = kernel.memory;
 const execution = kernel.execution;
+const UserAddress = mem.address.UserAddress;
 
 const pipe_size = 512;
 
@@ -26,8 +25,8 @@ pub fn alloc(read_file: **File, write_file: **File) !void {
     write_file.* = File.alloc() orelse return error.CouldNotAllocateFile;
     errdefer write_file.*.close();
 
-    const page = memalloc.allocPage() orelse return error.CouldNotAllocatePipe;
-    errdefer memalloc.freePage(page);
+    const page = mem.allocation.allocPage(.garbage) orelse return error.CouldNotAllocatePipe;
+    errdefer mem.allocation.freePage(page);
 
     const pipe: *Pipe = @ptrCast(page);
     pipe.read_is_open = true;
@@ -62,10 +61,10 @@ pub fn close(pipe: *Pipe, close_write: bool) void {
             free_pipe = true;
         }
     }
-    if (free_pipe) memalloc.kfree(pipe);
+    if (free_pipe) mem.allocation.freePage(@ptrCast(@alignCast(pipe))) catch @panic("could not free pipe");
 }
 
-pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
+pub fn write(pipe: *Pipe, address: UserAddress, write_count: u32) !u32 {
     const process = execution.Process.getCurrentForce();
 
     pipe.lock.acquire();
@@ -90,7 +89,7 @@ pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
             const chunked_write_count = @min(bytes_until_end, bytes_to_write);
             const write_end = write_position + chunked_write_count;
 
-            mem.copyIn(process.pageTable, pipe.data[write_position..write_end], address.add(bytes_written)) catch break;
+            mem.boundry.copyIn(process.pageTable, pipe.data[write_position..write_end], address.add(bytes_written)) catch break;
             bytes_written += chunked_write_count;
             pipe.write_count += chunked_write_count;
         }
@@ -101,7 +100,7 @@ pub fn write(pipe: *Pipe, address: ad.UserAddress, write_count: u32) !u32 {
     return bytes_written;
 }
 
-pub fn read(pipe: *Pipe, address: ad.UserAddress, read_count: u32) !u32 {
+pub fn read(pipe: *Pipe, address: UserAddress, read_count: u32) !u32 {
     const process = execution.Process.getCurrentForce();
 
     pipe.lock.acquire();
@@ -127,7 +126,7 @@ pub fn read(pipe: *Pipe, address: ad.UserAddress, read_count: u32) !u32 {
         const chunked_read_count = @min(bytes_until_end, bytes_to_read);
         const end_read = read_position + chunked_read_count;
 
-        mem.copyOut(process.pageTable, address.add(bytes_read), pipe.data[read_position..end_read]) catch break;
+        mem.boundry.copyOut(process.pageTable, address.add(bytes_read), pipe.data[read_position..end_read]) catch break;
         bytes_read += chunked_read_count;
         pipe.read_count += chunked_read_count;
     }

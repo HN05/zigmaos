@@ -2,14 +2,13 @@ const kernel = @import("root");
 const std = @import("std");
 const com = @import("common");
 
-const kalloc = @import("kalloc.zig");
-const PagePointer = @import("address.zig").PagePointer;
-const mem = @import("memory.zig");
-const ad = @import("address.zig");
-
 const execution = kernel.execution;
 const fs = kernel.filesystem;
-const page_size = com.riscv.page_size;
+const mem = kernel.memory;
+const PagePointer = mem.pages.PagePointer;
+const ad = mem.address;
+const alloc = mem.allocation;
+const page_size = mem.pages.page_size;
 const Book = com.ringbuf.Book;
 const MagicBuf = com.ringbuf.MagicBuf;
 const Rb = com.ringbuf;
@@ -54,21 +53,21 @@ const Ringbuf = extern struct {
         // allocate all the buf pages
         const alloced_page_count = blk: {
             for (&self.buf_pages, 0..) |*buf_pg_ptr, i| {
-                const page = kalloc.allocPage() orelse break :blk i;
+                const page = alloc.allocPage(.garbage) orelse break :blk i;
                 buf_pg_ptr.* = page;
             }
             break :blk self.buf_pages.len;
         };
-        self.book_page = kalloc.allocPage();
+        self.book_page = alloc.allocPage(.garbage);
         // undo all allocations if we failed to allocate any of the pages
         if (alloced_page_count < self.buf_pages.len or self.book_page == null) {
             if (self.book_page != null) {
-                kalloc.freePage(self.book_page.?) catch @panic("failed to free page");
+                alloc.freePage(self.book_page.?) catch @panic("failed to free page");
                 self.book_page = null;
             }
             for (self.buf_pages[0..alloced_page_count]) |*buf_pg_ptr| {
                 const buf: PagePointer = buf_pg_ptr.*.?;
-                kalloc.freePage(buf) catch @panic("failed to free page");
+                alloc.freePage(buf) catch @panic("failed to free page");
                 buf_pg_ptr.* = null;
             }
             return error.OutOfMemory;
@@ -83,14 +82,14 @@ const Ringbuf = extern struct {
     pub fn deactivate(self: *Self) void {
         for (&self.buf_pages) |*pg_o_p| {
             if (pg_o_p.*) |pg| {
-                kalloc.freePage(pg) catch @panic("failed to free page");
+                alloc.freePage(pg) catch @panic("failed to free page");
                 pg_o_p.* = null;
             }
         }
         if (self.book_page == null) @panic("deactivate: book page is already null");
         const book_p: *Book = @ptrCast(self.book_page.?);
         book_p.* = .{};
-        kalloc.freePage(self.book_page.?) catch @panic("failed to free page");
+        alloc.freePage(self.book_page.?) catch @panic("failed to free page");
         if (self.owners[0].proc != null or self.owners[1].proc != null) @panic("ringbuf has owners");
         self.* = .{};
     }
@@ -110,11 +109,11 @@ const Ringbuf = extern struct {
         };
         owner.proc = null;
         if (owner.vbuf != 0) {
-            mem.uvmUnmap(proc.pageTable, .fromInt(owner.vbuf), RINGBUF_SIZE * 2, false);
+            mem.user.unmap(proc.pageTable, .fromInt(owner.vbuf), RINGBUF_SIZE * 2, false);
             owner.vbuf = 0;
         } else @panic("disowning a ringbuf without a vbuf");
         if (owner.vbook != 0) {
-            mem.uvmUnmap(proc.pageTable, .fromInt(owner.vbook), 1, false);
+            mem.user.unmap(proc.pageTable, .fromInt(owner.vbook), 1, false);
             owner.vbook = 0;
         } else @panic("disowning a ringbuf without a vbook");
         self.refcount -= 1;
@@ -202,13 +201,13 @@ fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError
                 for (&rb.buf_pages) |pg| {
                     // TODO: undo all mappings if we fail to map a page
                     if (pg == null) @panic("buf page is null");
-                    mem.userVirtualMap(proc.pageTable, proc.topFreeVirtualPage, .fromInt(@intFromPtr(pg.?)), page_size, .{ .read = true, .write = true }) catch return Rb.RingbufError.MapPagesFailed;
+                    mem.user.map(proc.pageTable, proc.topFreeVirtualPage, .fromInt(@intFromPtr(pg.?)), page_size, .{ .read = true, .write = true }) catch return Rb.RingbufError.MapPagesFailed;
                     proc.topFreeVirtualPage = proc.topFreeVirtualPage.sub(page_size);
                 }
             }
             // map the book page right under the ringbuf
             if (rb.book_page == null) @panic("book page is null");
-            mem.userVirtualMap(proc.pageTable, proc.topFreeVirtualPage, .fromInt(@intFromPtr(rb.book_page.?)), page_size, .{ .read = true, .write = true }) catch return Rb.RingbufError.MapPagesFailed;
+            mem.user.map(proc.pageTable, proc.topFreeVirtualPage, .fromInt(@intFromPtr(rb.book_page.?)), page_size, .{ .read = true, .write = true }) catch return Rb.RingbufError.MapPagesFailed;
             proc.topFreeVirtualPage = proc.topFreeVirtualPage.sub(page_size);
             // | btm of ringbuf    |
             // | book              |
@@ -221,7 +220,7 @@ fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError
 
             // copy the address of the ringbuf into userspace
             // TODO: undo everything if we fail to copyout
-            mem.copyOut(proc.pageTable, addr_va, std.mem.asBytes(&ringbuf_loc)) catch return Rb.RingbufError.CopyOutFailed;
+            mem.boundry.copyOut(proc.pageTable, addr_va, std.mem.asBytes(&ringbuf_loc)) catch return Rb.RingbufError.CopyOutFailed;
 
             // leave a guard page
             proc.topFreeVirtualPage = proc.topFreeVirtualPage.sub(page_size);
@@ -229,7 +228,7 @@ fn ringbuf(name: []const u8, op: Rb.Op, addr_va: ad.UserAddress) Rb.RingbufError
         .close => {
             var vaddr: ?*anyopaque = null;
             // copy the address of the ringbuf into kernel space
-            mem.copyIn(proc.pageTable, std.mem.asBytes(&vaddr), addr_va) catch return Rb.RingbufError.CopyInFailed;
+            mem.boundry.copyIn(proc.pageTable, std.mem.asBytes(&vaddr), addr_va) catch return Rb.RingbufError.CopyInFailed;
 
             const rb = findRingbufByName(name) orelse return error.NameNotFound;
             const ringbuf_vaddr: usize = @intFromPtr(vaddr orelse return error.NoAddrGiven);

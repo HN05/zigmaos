@@ -1,9 +1,7 @@
 const std = @import("std");
-const common = @import("common");
+const kernel = @import("root");
 
-const address = @import("address.zig");
-
-const registers = common.riscv.registers;
+const pages = kernel.memory.pages;
 
 pub fn FlagOps(comptime Flag: type) type {
     return struct {
@@ -375,16 +373,16 @@ pub const Satp = struct {
     // use riscv's sv39 page table scheme.
     pub const SATP_SV39 = @as(usize, 8) << 60;
 
-    pub fn make(pagetable: address.PageTablePtr) usize {
+    pub fn make(pagetable: pages.PageTablePtr) usize {
         const ppn = @intFromPtr(pagetable) >> 12;
         return SATP_SV39 | ppn;
     }
 
-    pub fn write(pagetable: address.PageTablePtr) void {
+    pub fn write(pagetable: pages.PageTablePtr) void {
         base.write(make(pagetable));
     }
 
-    pub fn read() address.PageTablePtr {
+    pub fn read() pages.PageTablePtr {
         const value = base.read();
         const ppn = value & ((@as(usize, 1) << 44) - 1);
         return @ptrFromInt(ppn << 12);

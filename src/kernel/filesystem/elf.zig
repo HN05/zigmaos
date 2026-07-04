@@ -1,5 +1,7 @@
 // Format of an ELF executable file
-const ad = @import("../address.zig");
+const kernel = @import("root");
+
+const pages = kernel.memory.pages;
 
 const ElfIdentifier = extern struct {
     pub const correctMagic: u32 = 0x464C457F; // "\x7FELF" in little endian
@@ -40,7 +42,7 @@ const ProgramHeaderFlags = packed struct(u32) {
     read: bool = false,
     reserved: u29 = 0,
 
-    pub fn toPagePermissions(self: *ProgramHeaderFlags) ad.PagePermissions {
+    pub fn toPagePermissions(self: *ProgramHeaderFlags) pages.PagePermissions {
         return .{ .execute = self.execute, .read = self.read, .write = self.write };
     }
 };

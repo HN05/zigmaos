@@ -3,6 +3,7 @@ pub const concurrency = @import("concurrency/mod.zig");
 pub const execution = @import("execution/mod.zig");
 pub const drivers = @import("drivers/mod.zig");
 pub const filesystem = @import("filesystem/mod.zig");
+pub const memory = @import("memory/mod.zig");
 
 // for starting kernel
 const std = @import("std");

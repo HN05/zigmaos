@@ -1,10 +1,10 @@
 const kernel = @import("root");
 
-const memlayout = @import("../memlayout.zig");
 const log_root = @import("../klog.zig");
 const console = @import("console.zig");
 
 const execution = kernel.execution;
+const memlayout = kernel.memory.layout;
 const conc = kernel.concurrency;
 
 /// the UART control registers.

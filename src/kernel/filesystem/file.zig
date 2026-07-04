@@ -7,10 +7,10 @@ const Pipe = @import("pipe.zig");
 const Device = @import("device.zig");
 const log = @import("log.zig");
 const blocks = @import("blocks.zig");
-const ad = @import("../address.zig");
-const mem = @import("../memory.zig");
 
 const Process = kernel.execution.Process;
+const mem = kernel.memory;
+const UserAddress = mem.address.UserAddress;
 const Mutex = kernel.concurrency.Mutex;
 
 pub const FileType = enum {
@@ -124,7 +124,7 @@ pub fn close(file: *File) void {
 
 // Get metadata about file f.
 // addr is a user virtual address, pointing to a struct stat.
-pub fn getStatus(file: *const File, destination_address: ad.UserAddress) !void {
+pub fn getStatus(file: *const File, destination_address: UserAddress) !void {
     if (!file.hasInode()) return error.WrongFileType;
 
     var status: Inode.FileStatus = undefined;
@@ -137,12 +137,12 @@ pub fn getStatus(file: *const File, destination_address: ad.UserAddress) !void {
     }
 
     const process = Process.getCurrentForce();
-    try mem.copyOut(process.pageTable, destination_address, std.mem.asBytes(&status));
+    try mem.boundry.copyOut(process.pageTable, destination_address, std.mem.asBytes(&status));
 }
 
 // Read from file f.
 // addr is a user virtual address.
-pub fn read(file: *File, address: ad.UserAddress, read_count: u32) !u32 {
+pub fn read(file: *File, address: UserAddress, read_count: u32) !u32 {
     if (!file.is_readable) return error.FileNotReadable;
 
     var bytes_read: u32 = 0;
@@ -172,7 +172,7 @@ pub fn read(file: *File, address: ad.UserAddress, read_count: u32) !u32 {
 
 // Write to file f.
 // addr is a user virtual address.
-pub fn write(file: *File, address: ad.UserAddress, write_count: u32) !u32 {
+pub fn write(file: *File, address: UserAddress, write_count: u32) !u32 {
     if (!file.is_writeable) return error.FileNotWriteable;
 
     var bytes_written: u32 = 0;

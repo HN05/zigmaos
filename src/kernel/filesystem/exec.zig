@@ -6,24 +6,25 @@ const elf = @import("elf.zig");
 const Inode = @import("inode.zig");
 const log = @import("log.zig");
 const blocks = @import("blocks.zig");
-const mem = @import("../memory.zig");
-const ad = @import("../address.zig");
 
 const execution = kernel.execution;
+const mem = kernel.memory;
+const ad = mem.address;
 const param = common.param;
 const Process = execution.Process;
+const page_size = mem.pages.page_size;
 
 // Load a program segment into pagetable at virtual address va.
 // va must be page-aligned
 // and the pages from va to va+sz must already be mapped.
 // Returns 0 on success, -1 on failure.
-fn loadSegment(pageTable: ad.PageTablePtr, virtualAddress: ad.UserAddress, inode: *Inode, offset: u32, size: u32) !void {
+fn loadSegment(pageTable: mem.pages.PageTablePtr, virtualAddress: ad.UserAddress, inode: *Inode, offset: u32, size: u32) !void {
     var currentPage: u32 = 0;
-    while (currentPage < size) : (currentPage += ad.page_size) {
-        const physicalAddress = mem.walkAddr(pageTable, virtualAddress.add(currentPage)) catch @panic("loadSegment: address should exist");
+    while (currentPage < size) : (currentPage += page_size) {
+        const physicalAddress = mem.user.translateAddress(pageTable, virtualAddress.add(currentPage)) catch @panic("loadSegment: address should exist");
 
         // check if on last page
-        const readCount = if (size - currentPage < ad.page_size) size - currentPage else ad.page_size;
+        const readCount = if (size - currentPage < page_size) size - currentPage else page_size;
 
         const readResult = try inode.read(.{ .kernel = physicalAddress }, offset + currentPage, readCount);
 
@@ -36,9 +37,9 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
 
     const process = Process.getCurrentForce();
 
-    const pageTable = try process.createPagetable();
+    const pageTable = try mem.user.createPagetable(.fromPtr(process.trapFrame));
     var programSize: usize = 0;
-    errdefer mem.freePageTable(pageTable, programSize);
+    errdefer mem.user.freePageTable(pageTable, programSize);
 
     var inode: *Inode = undefined;
     var entry: usize = undefined;
@@ -78,7 +79,7 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
             const virtualAddress: ad.UserAddress = .fromInt(programHeader.virtualAddress);
             if (!virtualAddress.isPageAligned()) return error.MemoryNotPageAligned;
 
-            const newProgramSize = try mem.uvmAlloc(pageTable, programSize, newSize[0], programHeader.flags.toPagePermissions());
+            const newProgramSize = try mem.user.alloc(pageTable, programSize, newSize[0], programHeader.flags.toPagePermissions());
             programSize = newProgramSize;
 
             try loadSegment(pageTable, virtualAddress, inode, @intCast(programHeader.offset), @intCast(programHeader.fileSize));
@@ -90,12 +91,12 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
     // Allocate two pages at the next page boundary.
     // Make the first inaccessible as a stack guard.
     // Use the second as the user stack.
-    const alignedProgramSize = ad.pageRoundUp(programSize);
-    programSize = try mem.uvmAlloc(pageTable, alignedProgramSize, alignedProgramSize + 2 * ad.page_size, .{ .read = true, .write = true });
+    const alignedProgramSize = mem.pages.pageRoundUp(programSize);
+    programSize = try mem.user.alloc(pageTable, alignedProgramSize, alignedProgramSize + 2 * page_size, .{ .read = true, .write = true });
 
-    mem.uvmClearUser(pageTable, .fromInt(programSize - 2 * ad.page_size));
+    mem.user.clearUser(pageTable, .fromInt(programSize - 2 * page_size));
     var stackPointer = programSize;
-    const stackBase = stackPointer - ad.page_size;
+    const stackBase = stackPointer - page_size;
 
     var userStack: [param.MAXARG + 1]usize = undefined;
 
@@ -106,7 +107,7 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
 
         if (stackPointer < stackBase) return error.OutOfArgumentSpace;
 
-        try mem.copyOutTerminated(pageTable, .fromInt(stackPointer), arg);
+        try mem.boundry.copyOutTerminated(pageTable, .fromInt(stackPointer), arg);
         userStack[index] = stackPointer;
     }
     userStack[argv.len] = 0;
@@ -116,7 +117,7 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
     stackPointer -= stackPointer % 16;
     if (stackPointer < stackBase) return error.OutOfArgumentPointerSpace;
 
-    try mem.copyOut(pageTable, .fromInt(stackPointer), std.mem.sliceAsBytes(userStack[0..(argv.len + 1)]));
+    try mem.boundry.copyOut(pageTable, .fromInt(stackPointer), std.mem.sliceAsBytes(userStack[0..(argv.len + 1)]));
 
     // arguments to user main(argc, argv)
     // argc is returned via the system call return
@@ -143,7 +144,7 @@ pub fn exec(path: []const u8, argv: [][]const u8) !usize {
     process.trapFrame.epc = entry; // initial program counter = main
     process.trapFrame.sp = stackPointer;
 
-    mem.freePageTable(oldPageTable, oldSize);
+    mem.user.freePageTable(oldPageTable, oldSize);
 
     return argv.len; // this ends up in a0, the first argument to main(argc, argv)
 }

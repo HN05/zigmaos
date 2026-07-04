@@ -6,12 +6,12 @@ const Device = @import("device.zig");
 const blocks = @import("blocks.zig");
 const Buffer = @import("buffer.zig");
 const log = @import("log.zig");
-const ad = @import("../address.zig");
-const mem = @import("../memory.zig");
 const Directory = @import("directory.zig");
 
 const execution = kernel.execution;
+const mem = kernel.memory;
 const conc = kernel.concurrency;
+const ad = mem.address;
 
 // Inodes.
 //
@@ -392,7 +392,7 @@ pub fn read(inode: *Inode, destination_address: ad.AnyAddress, offset: u32, coun
 
         const block_offset = current_offset % blocks.block_size;
         const bytes_this_block = @min(bytes_to_read - bytes_read, blocks.block_size - block_offset);
-        try mem.eitherCopyOut(current_destination, buffer.data[block_offset .. block_offset + bytes_this_block]);
+        try mem.boundry.eitherCopyOut(current_destination, buffer.data[block_offset .. block_offset + bytes_this_block]);
 
         bytes_read += bytes_this_block;
         current_offset += bytes_this_block;
@@ -421,7 +421,7 @@ pub fn write(inode: *Inode, source_address: ad.AnyAddress, offset: u32, count: u
 
         const block_offset = current_offset % blocks.block_size;
         const bytes_this_block = @min(count - bytes_written, blocks.block_size - block_offset);
-        try mem.eitherCopyIn(current_source, buffer.data[block_offset .. block_offset + bytes_this_block]);
+        try mem.boundry.eitherCopyIn(current_source, buffer.data[block_offset .. block_offset + bytes_this_block]);
 
         log.write(buffer);
 

@@ -4,7 +4,7 @@
 const std = @import("std");
 const kernel = @import("root");
 
-const ml = @import("memlayout.zig");
+const ml = kernel.memory.layout;
 
 const getHart = kernel.execution.Cpu.getCurrentId;
 

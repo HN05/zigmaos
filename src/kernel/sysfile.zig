@@ -10,12 +10,11 @@ const common = @import("common");
 
 const sysargs = @import("sysargs.zig");
 const log = @import("debuglog.zig");
-const kalloc = @import("kalloc.zig");
-const address = @import("address.zig");
-const mem = @import("memory.zig");
-const ad = @import("address.zig");
 
-const page_size = common.riscv.page_size;
+const mem = kernel.memory;
+const ad = mem.address;
+const alloc = mem.allocation;
+const page_size = mem.pages.page_size;
 const param = common.param;
 const Process = kernel.execution.Process;
 const fs = kernel.filesystem;
@@ -464,20 +463,20 @@ pub fn exec() !u64 {
 
     const userArgArray = sysargs.getAddress(.a1) orelse return ExecErrors.FailedGetArgv;
 
-    var buffers: [common.param.MAXARG]?address.PagePointer = undefined;
+    var buffers: [common.param.MAXARG]?mem.pages.PagePointer = undefined;
     @memset(&buffers, null);
 
     defer {
         for (buffers) |val| {
             if (val) |page| {
-                kalloc.freePage(page) catch @panic("could not free memory");
+                alloc.freePage(page) catch @panic("could not free memory");
             } else break;
         }
     }
 
     var argv: [common.param.MAXARG][]const u8 = undefined;
     var index: usize = 0;
-    var userArg: address.UserAddress = .fromInt(0);
+    var userArg: ad.UserAddress = .fromInt(0);
     while (true) : (index += 1) {
         if (index >= buffers.len) return ExecErrors.TooManyArgs;
 
@@ -488,7 +487,7 @@ pub fn exec() !u64 {
             break;
         }
 
-        const page = kalloc.allocPage() orelse return ExecErrors.FailedGetMem;
+        const page = alloc.allocPage(.garbage) orelse return ExecErrors.FailedGetMem;
         buffers[index] = page;
 
         const argLength = sysargs.getStringFromAddress(userArg, page[0..page_size]) catch return ExecErrors.FailedGetArgData;
@@ -526,6 +525,6 @@ pub fn pipe() !void {
     var writeFileDescriptor = try sysargs.fileDescriptorAllocate(writeFile);
     errdefer process.openFiles[writeFileDescriptor] = null;
 
-    mem.copyOut(process.pageTable, fileDescArray, std.mem.asBytes(&readFileDescriptor)) catch return PipeErrors.FailedToOutputFirstFd;
-    mem.copyOut(process.pageTable, fileDescArray.add(@sizeOf(c_int)), std.mem.asBytes(&writeFileDescriptor)) catch return PipeErrors.FailedToOutputSecondFd;
+    mem.boundry.copyOut(process.pageTable, fileDescArray, std.mem.asBytes(&readFileDescriptor)) catch return PipeErrors.FailedToOutputFirstFd;
+    mem.boundry.copyOut(process.pageTable, fileDescArray.add(@sizeOf(c_int)), std.mem.asBytes(&writeFileDescriptor)) catch return PipeErrors.FailedToOutputSecondFd;
 }

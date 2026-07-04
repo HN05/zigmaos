@@ -1,11 +1,12 @@
 const std = @import("std");
 const common = @import("common");
+const kernel = @import("root");
 
 const csr = @import("csr.zig");
 const main = @import("main.zig");
-const memlayout = @import("memlayout.zig");
 
 const Register = common.riscv.Register;
+const ml = kernel.memory.layout;
 const param = common.param;
 
 // a scratch area per CPU for machine-mode timer interrupts.
@@ -67,14 +68,14 @@ fn timerinit() void {
 
     // ask the CLINT for a timer interrupt.
     const interval = 1000000; // cycles; about 1/10th second in qemu.
-    memlayout.clint_mtimecmp(id).* = memlayout.clint_mtime.* + interval;
+    ml.clint_mtimecmp(id).* = ml.clint_mtime.* + interval;
 
     // prepare information in scratch[] for timervec.
     // scratch[0..2] : space for timervec to save registers.
     // scratch[3] : address of CLINT MTIMECMP register.
     // scratch[4] : desired interval (in cycles) between timer interrupts.
     var scratch = timer_scratch[id];
-    scratch[3] = @intFromPtr(memlayout.clint_mtimecmp(id));
+    scratch[3] = @intFromPtr(ml.clint_mtimecmp(id));
     scratch[4] = interval;
     csr.Mscratch.write(@intFromPtr(&scratch));
 
