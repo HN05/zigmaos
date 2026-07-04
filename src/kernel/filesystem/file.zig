@@ -200,21 +200,18 @@ pub fn write(file: *File, address: UserAddress, write_count: u32) !u32 {
             const max_bytes = (common.param.max_num_operation_blocks - 1 - 1 - 2) / 2 * DiskBlock.block_size;
 
             while (bytes_written < write_count) {
+                log.beginOperation();
+                defer log.endOperation();
+
+                inode.lock();
+                defer inode.release();
+
                 const bytes_to_write = @min(write_count - bytes_written, max_bytes);
+                const iteration_bytes_written = try inode.write(.{ .user = address.add(bytes_written) }, inode_file.offset, bytes_to_write);
+                inode_file.offset += iteration_bytes_written;
 
-                {
-                    log.beginOperation();
-                    defer log.endOperation();
-
-                    inode.lock();
-                    defer inode.release();
-
-                    const iteration_bytes_written = try inode.write(.{ .user = address.add(bytes_written) }, inode_file.offset, bytes_to_write);
-                    inode_file.offset += iteration_bytes_written;
-
-                    if (iteration_bytes_written != bytes_to_write) break; // error from inode write
-                    bytes_written += iteration_bytes_written;
-                }
+                if (iteration_bytes_written != bytes_to_write) break; // error from inode write
+                bytes_written += iteration_bytes_written;
             }
             if (bytes_written != write_count) return error.WriteToInodeFailed;
         },
