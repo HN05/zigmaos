@@ -2,7 +2,7 @@ const std = @import("std");
 const common = @import("common");
 const kernel = @import("root");
 
-const csr = @import("csr.zig");
+const csr = @import("../csr.zig");
 const main = @import("main.zig");
 
 const Register = common.riscv.Register;

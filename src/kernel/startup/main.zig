@@ -2,8 +2,8 @@ const kernel = @import("root");
 const std = @import("std");
 const common = @import("common");
 
-const log_root = @import("klog.zig");
-const plic = @import("plic.zig");
+const log_root = @import("../klog.zig");
+const plic = @import("../plic.zig");
 
 const execution = kernel.execution;
 const traps = kernel.traps;

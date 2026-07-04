@@ -8,7 +8,7 @@ pub const traps = @import("traps/mod.zig");
 
 // for starting kernel
 const std = @import("std");
-const start_file = @import("start.zig");
+const start_file = @import("startup/start.zig");
 const param = @import("common").param;
 const log_root = @import("klog.zig");
 
