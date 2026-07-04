@@ -10,10 +10,10 @@ const SyscallGenStep = @import("build/SyscallGenStep.zig");
 const QemuRunStep = @import("build/QemuRunStep.zig");
 
 const kernel_src = [_][]const u8{
-    "src/kernel/entry.S", // Very first boot instructions.
+    "src/kernel/startup/entry.S", // Very first boot instructions.
     "src/kernel/execution/switchcontext.S", // Thread switching.
-    "src/kernel/trampoline.S", // Assembly code to switch between user and kernel.
-    "src/kernel/kernelvec.S", // Handle traps from kernel, and timer interrupts.
+    "src/kernel/traps/trampoline.S", // Assembly code to switch between user and kernel.
+    "src/kernel/traps/kernelvec.S", // Handle traps from kernel, and timer interrupts.
 };
 
 const cflags = [_][]const u8{
