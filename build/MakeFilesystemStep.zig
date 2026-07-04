@@ -211,18 +211,18 @@ fn rsect(io: std.Io, sec: usize, buf: []u8) !void {
 
 fn winode(io: std.Io, inode_number: u32, ip: *Inode.DiskInode) !void {
     var buf: [fs.block_size]u8 = undefined;
-    const bn = sb.getInodeBlock(inode_number);
-    try rsect(io, bn, &buf);
+    const block_number = sb.getInodeBlockNumber(inode_number);
+    try rsect(io, block_number, &buf);
     const dip = buf[(inode_number % Inode.inodes_per_block) * @sizeOf(Inode.DiskInode) ..];
     const mem_bytes = mem.asBytes(ip);
     @memcpy(dip[0..mem_bytes.len], mem_bytes);
-    try wsect(io, bn, &buf);
+    try wsect(io, block_number, &buf);
 }
 
 fn rinode(io: std.Io, inode_number: u32, ip: *Inode.DiskInode) !void {
     var buf: [fs.block_size]u8 = undefined;
-    const bn = sb.getInodeBlock(inode_number);
-    try rsect(io, bn, &buf);
+    const block_number = sb.getInodeBlockNumber(inode_number);
+    try rsect(io, block_number, &buf);
     var dip = buf[(inode_number % Inode.inodes_per_block) * @sizeOf(Inode.DiskInode) ..];
     @memcpy(mem.asBytes(ip), dip[0..@sizeOf(Inode.DiskInode)]);
 }

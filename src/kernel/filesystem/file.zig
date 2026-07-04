@@ -6,7 +6,7 @@ const Inode = @import("inode.zig");
 const Pipe = @import("pipe.zig");
 const Device = @import("device.zig");
 const log = @import("log.zig");
-const blocks = @import("blocks.zig");
+const DiskBlock = @import("diskblock.zig");
 
 const Process = kernel.execution.Process;
 const mem = kernel.memory;
@@ -197,7 +197,7 @@ pub fn write(file: *File, address: UserAddress, write_count: u32) !u32 {
             // and 2 blocks of slop for non-aligned writes.
             // this really belongs lower down, since writei()
             // might be writing a device like the console.
-            const max_bytes = (common.param.max_num_operation_blocks - 1 - 1 - 2) / 2 * blocks.block_size;
+            const max_bytes = (common.param.max_num_operation_blocks - 1 - 1 - 2) / 2 * DiskBlock.block_size;
 
             while (bytes_written < write_count) {
                 const bytes_to_write = @min(write_count - bytes_written, max_bytes);

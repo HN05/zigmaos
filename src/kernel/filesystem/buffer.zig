@@ -17,7 +17,7 @@ const std = @import("std");
 
 const Device = @import("device.zig");
 const Cache = @import("buffer_cache.zig");
-const blocks = @import("blocks.zig");
+const DiskBlock = @import("diskblock.zig");
 
 const Mutex = kernel.concurrency.Mutex;
 const drivers = kernel.drivers;
@@ -26,13 +26,12 @@ const Buffer = @This();
 
 is_valid: bool = false, // has data been read from disk?
 disk_owned: bool = undefined, // does disk "own" buf?
-device: Device.ID = undefined,
-block_number: u32 = undefined,
+block: DiskBlock = undefined,
 lock: Mutex = .init(.sleep, "buffer"),
 reference_count: u32 = 0,
 previous: *Buffer = undefined, // LRU cache list
 next: *Buffer = undefined,
-data: [blocks.block_size]u8 align(8) = undefined,
+data: [DiskBlock.block_size]u8 align(8) = undefined,
 
 pub fn castData(buffer: *Buffer, comptime T: type) *T {
     return std.mem.bytesAsValue(
@@ -45,8 +44,8 @@ pub const cache = &cacheBacking;
 var cacheBacking = Cache{};
 
 // Return a locked buf with the contents of the indicated block.
-pub fn read(device: Device.ID, block_number: u32) *Buffer {
-    const buffer = cache.get_buffer(device, block_number);
+pub fn read(block: DiskBlock) *Buffer {
+    const buffer = cache.get_buffer(block);
     if (!buffer.is_valid) {
         drivers.disk.read(buffer);
         buffer.is_valid = true;

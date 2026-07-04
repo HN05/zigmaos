@@ -179,7 +179,7 @@ pub fn write(buffer: *Buffer) void {
 }
 
 fn readOrWrite(buffer: *Buffer, do_write: bool) void {
-    const sector = buffer.block_number * (fs.block_size / Disk.sector_size);
+    const sector = buffer.block.number * (fs.block_size / Disk.sector_size);
 
     disk.vdisk_lock.acquire();
     defer disk.vdisk_lock.release();

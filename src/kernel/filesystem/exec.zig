@@ -5,7 +5,6 @@ const std = @import("std");
 const elf = @import("elf.zig");
 const Inode = @import("inode.zig");
 const log = @import("log.zig");
-const blocks = @import("blocks.zig");
 
 const execution = kernel.execution;
 const mem = kernel.memory;

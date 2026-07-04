@@ -2,6 +2,7 @@ const kernel = @import("root");
 const common = @import("common");
 
 const Buffer = @import("buffer.zig");
+const DiskBlock = @import("diskblock.zig");
 const Device = @import("device.zig");
 
 const Mutex = kernel.concurrency.Mutex;
@@ -33,7 +34,7 @@ pub fn init_array(self: *Cache) void {
 // Look through buffer cache for block on device dev.
 // If not found, allocate a buffer.
 // In either case, return locked buffer.
-pub fn get_buffer(self: *Cache, device: Device.ID, block_number: u32) *Buffer {
+pub fn get_buffer(self: *Cache, block: DiskBlock) *Buffer {
     self.lock.acquire();
     var current_buffer = self.head.next;
     defer current_buffer.lock.acquire(); // acquire lock before returning
@@ -41,7 +42,7 @@ pub fn get_buffer(self: *Cache, device: Device.ID, block_number: u32) *Buffer {
 
     // Is the block already cached?
     while (current_buffer != &self.head) : (current_buffer = current_buffer.next) {
-        if (current_buffer.device == device and current_buffer.block_number == block_number) {
+        if (current_buffer.block.eql(block)) {
             current_buffer.reference_count += 1;
             return current_buffer;
         }
@@ -51,8 +52,7 @@ pub fn get_buffer(self: *Cache, device: Device.ID, block_number: u32) *Buffer {
     current_buffer = self.head.previous;
     while (current_buffer != &self.head) : (current_buffer = current_buffer.previous) {
         if (current_buffer.reference_count == 0) {
-            current_buffer.device = device;
-            current_buffer.block_number = block_number;
+            current_buffer.block = block;
             current_buffer.is_valid = false;
             current_buffer.reference_count = 1;
             return current_buffer;

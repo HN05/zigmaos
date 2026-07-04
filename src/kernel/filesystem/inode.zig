@@ -3,10 +3,11 @@ const std = @import("std");
 const common = @import("common");
 
 const Device = @import("device.zig");
-const blocks = @import("blocks.zig");
+const DiskBlock = @import("diskblock.zig");
 const Buffer = @import("buffer.zig");
 const log = @import("log.zig");
 const Directory = @import("directory.zig");
+const super_block = @import("superblock.zig").global;
 
 const execution = kernel.execution;
 const mem = kernel.memory;
@@ -83,25 +84,27 @@ const ad = mem.address;
 // read or write that inode's ip->valid, ip->size, ip->type, &c.
 
 const Inode = @This();
+pub const InodeNumber = u32;
+pub const FileBlock = u32;
 
 pub const root_inode_number = 1; // root i-number
 pub const max_path_size = common.param.MAXPATH;
 
 pub const direct_pointer_count = 12;
 pub const indirect_pointer_block_index = direct_pointer_count;
-pub const indirect_pointer_count = blocks.block_size / @sizeOf(u32);
+pub const indirect_pointer_count = DiskBlock.block_size / @sizeOf(u32);
 pub const inode_address_count = direct_pointer_count + 1;
-pub const inodes_per_block = blocks.block_size / @sizeOf(DiskInode);
+pub const inodes_per_block = DiskBlock.block_size / @sizeOf(DiskInode);
 pub const max_file_block_count = direct_pointer_count + indirect_pointer_count;
 
 // Block containing inode i
-fn getInodeBlock(inode_number: u32) u32 {
-    return inode_number / inodes_per_block + blocks.superBlock.inodestart;
+fn getInodeBlock(inode_number: InodeNumber, device: Device.ID) DiskBlock {
+    return .init(inode_number / inodes_per_block + super_block.inodestart, device);
 }
 
 // in-memory inode identity
 filesystem_device: Device.ID = .zero,
-inode_number: u32 = 0,
+inode_number: InodeNumber = 0,
 reference_count: u32 = 0,
 
 raw_lock: conc.Mutex = .init(.sleep, "inode"),
@@ -113,7 +116,7 @@ pub const InodeType = enum(u16) { free = 0, directory = 1, file = 2, device = 3 
 
 pub const FileStatus = extern struct {
     device: Device.ID,
-    inode_number: u32,
+    inode_number: InodeNumber,
     type: InodeType,
     link_count: u16,
     size: u64,
@@ -123,7 +126,7 @@ pub const FileStatus = extern struct {
 pub const DiskInode = extern struct {
     device: Device.ID = .zero,
     size: u32 = 0, // Size of file (bytes)
-    addrs: [inode_address_count]u32 = [_]u32{0} ** inode_address_count, // Data block addresses
+    addrs: [inode_address_count]DiskBlock.BlockNumber = [_]DiskBlock.BlockNumber{0} ** inode_address_count, // Data block addresses
     type: InodeType = .free, // File type
     link_count: u16 = 0, // Number of links to inode in file system
 };
@@ -142,7 +145,7 @@ pub const InodeTable = struct {
 
 var inode_table: InodeTable = .{};
 
-fn getDiskInode(buffer: *Buffer, inode_number: u32) *DiskInode {
+fn getDiskInode(buffer: *Buffer, inode_number: InodeNumber) *DiskInode {
     const disk_inodes = buffer.castData(DiskInodeBlock);
     const inode_index = inode_number % inodes_per_block;
     return &disk_inodes.*[inode_index];
@@ -153,9 +156,9 @@ fn getDiskInode(buffer: *Buffer, inode_number: u32) *DiskInode {
 // Returns an unlocked but allocated and referenced inode,
 // or NULL if there is no free inode.
 pub fn alloc(device: Device.ID, inode_type: InodeType) !*Inode {
-    for (1..blocks.superBlock.ninodes) |inode_number_usize| {
-        const inode_number: u32 = @intCast(inode_number_usize);
-        const buffer = Buffer.read(device, getInodeBlock(inode_number));
+    for (1..super_block.ninodes) |inode_number_usize| {
+        const inode_number: InodeNumber = @intCast(inode_number_usize);
+        const buffer = getInodeBlock(inode_number, device).read();
         defer buffer.release();
 
         const disk_inode = getDiskInode(buffer, inode_number);
@@ -175,7 +178,7 @@ pub fn alloc(device: Device.ID, inode_type: InodeType) !*Inode {
 // that lives on disk.
 // Caller must hold ip->lock.
 pub fn update(inode: *Inode) void {
-    const buffer = Buffer.read(inode.filesystem_device, getInodeBlock(inode.inode_number));
+    const buffer = getInodeBlock(inode.inode_number, inode.filesystem_device).read();
     defer buffer.release();
 
     const disk_inode = getDiskInode(buffer, inode.inode_number);
@@ -186,7 +189,7 @@ pub fn update(inode: *Inode) void {
 // Find the inode with number inum on device dev
 // and return the in-memory copy. Does not lock
 // the inode and does not read it from disk.
-pub fn get(device: Device.ID, inode_number: u32) *Inode {
+pub fn get(device: Device.ID, inode_number: InodeNumber) *Inode {
     inode_table.lock.acquire();
     defer inode_table.lock.release();
 
@@ -231,7 +234,7 @@ pub fn lock(inode: *Inode) void {
     inode.raw_lock.acquire();
 
     if (!inode.is_valid) {
-        const buffer = Buffer.read(inode.filesystem_device, getInodeBlock(inode.inode_number));
+        const buffer = getInodeBlock(inode.inode_number, inode.filesystem_device).read();
         defer buffer.release();
 
         const disk_inode = getDiskInode(buffer, inode.inode_number);
@@ -294,43 +297,48 @@ pub fn releasePut(inode: *Inode) void {
 // in blocks on the disk. The first NDIRECT block numbers
 // are listed in ip->addrs[].  The next NINDIRECT blocks are
 // listed in block ip->addrs[NDIRECT].
+fn getDiskBlockDirect(inode: *Inode, index: FileBlock) ?DiskBlock {
+    if (index > direct_pointer_count) @panic("getDiskBlockDirect");
+    const block_number = inode.disk_inode.addrs[index];
+    if (block_number == 0) return null;
+    return .init(block_number, inode.filesystem_device);
+}
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
-pub fn getBlockAddress(inode: *Inode, block_number: u32) !u32 {
+pub fn getBlock(inode: *Inode, index: FileBlock) !DiskBlock {
     // try to find direct
-    if (block_number < direct_pointer_count) {
-        var address = inode.disk_inode.addrs[block_number];
-        if (address == 0) {
-            // allocate block
-            address = try blocks.blockAllocate(inode.filesystem_device);
-            inode.disk_inode.addrs[block_number] = address;
-        }
-        return address;
+    if (index < direct_pointer_count) {
+        if (getDiskBlockDirect(inode, index)) |block| return block;
+
+        // allocate block
+        const block = try DiskBlock.allocate(inode.filesystem_device);
+        inode.disk_inode.addrs[index] = block.number;
+        return block;
     }
 
-    const block_number_indirect = block_number - direct_pointer_count;
-    if (block_number_indirect >= indirect_pointer_count) @panic("block number out of range");
+    const indirect_block_index = index - direct_pointer_count;
+    if (indirect_block_index >= indirect_pointer_count) @panic("block number out of range");
 
     // Load indirect block, allocating if necessary.
-    var pointer_block = inode.disk_inode.addrs[indirect_pointer_block_index];
-    if (pointer_block == 0) {
+    const indirect_block = getDiskBlockDirect(inode, indirect_pointer_block_index) orelse blk: {
         // allocate block
-        pointer_block = try blocks.blockAllocate(inode.filesystem_device);
-        inode.disk_inode.addrs[indirect_pointer_block_index] = pointer_block;
-    }
-    const buffer = Buffer.read(inode.filesystem_device, pointer_block);
+        const block = try DiskBlock.allocate(inode.filesystem_device);
+        inode.disk_inode.addrs[indirect_pointer_block_index] = block.number;
+        break :blk block;
+    };
+    const buffer = indirect_block.read();
     defer buffer.release();
 
-    const addresses = buffer.castData([indirect_pointer_count]u32);
-    var address = addresses[block_number_indirect];
-    if (address == 0) {
-        // alloc block
-        address = try blocks.blockAllocate(inode.filesystem_device);
-        addresses[block_number_indirect] = address;
-        log.write(buffer);
-    }
-    return address;
+    const addresses = buffer.castData([indirect_pointer_count]DiskBlock.BlockNumber);
+    const block_number = addresses[indirect_block_index];
+    if (block_number != 0) return .init(block_number, inode.filesystem_device);
+
+    // alloc block
+    const block = try DiskBlock.allocate(inode.filesystem_device);
+    addresses[indirect_block_index] = block.number;
+    log.write(buffer);
+    return block;
 }
 
 // Truncate inode (discard contents).
@@ -339,26 +347,26 @@ pub fn truncate(inode: *Inode) void {
     defer inode.update(); // update the inode last after changes
 
     for (0..direct_pointer_count) |direct_pointer| {
-        if (inode.disk_inode.addrs[direct_pointer] != 0) {
-            blocks.blockFree(inode.filesystem_device, inode.disk_inode.addrs[direct_pointer]);
+        if (getDiskBlockDirect(inode, @intCast(direct_pointer))) |block| {
+            block.free();
             inode.disk_inode.addrs[direct_pointer] = 0;
         }
     }
-    const indirect_address = inode.disk_inode.addrs[indirect_pointer_block_index];
-    if (indirect_address != 0) {
+    const maybe_indirect_block = getDiskBlockDirect(inode, indirect_pointer_block_index);
+    if (maybe_indirect_block) |indirect_block| {
         // Free all pointed to blocks
         {
-            const buffer = Buffer.read(inode.filesystem_device, indirect_address);
+            const buffer = indirect_block.read();
             defer buffer.release();
 
             const addresses = buffer.castData([indirect_pointer_count]u32);
-            for (addresses.*) |address| {
-                if (address != 0) {
-                    blocks.blockFree(inode.filesystem_device, address);
+            for (addresses.*) |block_number| {
+                if (block_number != 0) {
+                    DiskBlock.free(.init(block_number, inode.filesystem_device));
                 }
             }
         }
-        blocks.blockFree(inode.filesystem_device, indirect_address);
+        indirect_block.free();
         inode.disk_inode.addrs[indirect_pointer_block_index] = 0;
     }
     inode.disk_inode.size = 0;
@@ -367,7 +375,13 @@ pub fn truncate(inode: *Inode) void {
 // Copy stat information from inode.
 // Caller must hold ip->lock.
 pub fn getStatus(inode: *Inode) FileStatus {
-    return .{ .device = inode.filesystem_device, .inode_number = inode.inode_number, .type = inode.disk_inode.type, .link_count = inode.disk_inode.link_count, .size = inode.disk_inode.size };
+    return .{
+        .device = inode.filesystem_device,
+        .inode_number = inode.inode_number,
+        .type = inode.disk_inode.type,
+        .link_count = inode.disk_inode.link_count,
+        .size = inode.disk_inode.size,
+    };
 }
 
 // Read data from inode.
@@ -386,12 +400,12 @@ pub fn read(inode: *Inode, destination_address: ad.AnyAddress, offset: u32, coun
     var current_destination = destination_address;
 
     while (bytes_read < bytes_to_read) {
-        const address = inode.getBlockAddress(current_offset / blocks.block_size) catch break;
-        const buffer = Buffer.read(inode.filesystem_device, address);
+        const block = inode.getBlock(current_offset / DiskBlock.block_size) catch break;
+        const buffer = block.read();
         defer buffer.release();
 
-        const block_offset = current_offset % blocks.block_size;
-        const bytes_this_block = @min(bytes_to_read - bytes_read, blocks.block_size - block_offset);
+        const block_offset = current_offset % DiskBlock.block_size;
+        const bytes_this_block = @min(bytes_to_read - bytes_read, DiskBlock.block_size - block_offset);
         try mem.boundry.eitherCopyOut(current_destination, buffer.data[block_offset .. block_offset + bytes_this_block]);
 
         bytes_read += bytes_this_block;
@@ -408,19 +422,19 @@ pub fn read(inode: *Inode, destination_address: ad.AnyAddress, offset: u32, coun
 pub fn write(inode: *Inode, source_address: ad.AnyAddress, offset: u32, count: u32) !u32 {
     if (offset > inode.disk_inode.size) return error.OutOfInodeRange;
     if (@addWithOverflow(offset, count)[1] == 1) return error.OffsetOverflows;
-    if (offset + count > blocks.block_size * max_file_block_count) return error.FileOverflow;
+    if (offset + count > DiskBlock.block_size * max_file_block_count) return error.FileOverflow;
 
     var bytes_written: u32 = 0;
     var current_offset = offset;
     var current_source = source_address;
 
     while (bytes_written < count) {
-        const address = inode.getBlockAddress(current_offset / blocks.block_size) catch break;
-        const buffer = Buffer.read(inode.filesystem_device, address);
+        const block = inode.getBlock(current_offset / DiskBlock.block_size) catch break;
+        const buffer = block.read();
         defer buffer.release();
 
-        const block_offset = current_offset % blocks.block_size;
-        const bytes_this_block = @min(count - bytes_written, blocks.block_size - block_offset);
+        const block_offset = current_offset % DiskBlock.block_size;
+        const bytes_this_block = @min(count - bytes_written, DiskBlock.block_size - block_offset);
         try mem.boundry.eitherCopyIn(current_source, buffer.data[block_offset .. block_offset + bytes_this_block]);
 
         log.write(buffer);

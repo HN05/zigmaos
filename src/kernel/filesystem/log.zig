@@ -24,8 +24,9 @@ const kernel = @import("root");
 const common = @import("common");
 
 const Device = @import("device.zig");
-const blocks = @import("blocks.zig");
 const Buffer = @import("buffer.zig");
+const SuperBlock = @import("superblock.zig").SuperBlock;
+const DiskBlock = @import("diskblock.zig");
 
 const execution = kernel.execution;
 const Mutex = kernel.concurrency.Mutex;
@@ -34,7 +35,7 @@ const Mutex = kernel.concurrency.Mutex;
 // and to keep track in memory of logged block# before commit.
 const Header = struct {
     length: u32,
-    block: [common.param.log_size]u32,
+    block: [common.param.log_size]DiskBlock.BlockNumber,
 
     pub fn copyFrom(destination: *Header, source: *const Header) void {
         destination.length = source.length;
@@ -45,12 +46,12 @@ const Header = struct {
 };
 
 comptime {
-    if (@sizeOf(Header) > blocks.block_size) @compileError("too big logheader");
+    if (@sizeOf(Header) > DiskBlock.block_size) @compileError("too big logheader");
 }
 
 const Log = struct {
     lock: Mutex,
-    start: u32,
+    start: DiskBlock.BlockNumber,
     size: u32,
     outstanding: u32, // how many FS sys calls are executing.
     is_commiting: bool, // in commit(), please wait.
@@ -60,7 +61,7 @@ const Log = struct {
 
 var log: Log = undefined;
 
-pub fn init(device: Device.ID, superblock: blocks.SuperBlock) void {
+pub fn init(device: Device.ID, superblock: *SuperBlock) void {
     log = .{
         .lock = .init(.spin, "log"),
         .start = superblock.logstart,
@@ -73,13 +74,17 @@ pub fn init(device: Device.ID, superblock: blocks.SuperBlock) void {
     recoverFromLog();
 }
 
+fn getBuffer(block_number: DiskBlock.BlockNumber) *Buffer {
+    return Buffer.read(.init(block_number, log.device));
+}
+
 // Copy committed blocks from log to their home location
 fn installTransaction(is_recovering: bool) void {
     for (0..log.header.length) |tail| {
-        const log_buffer = Buffer.read(log.device, @intCast(log.start + tail + 1));
+        const log_buffer = getBuffer(@intCast(log.start + tail + 1));
         defer log_buffer.release();
 
-        const destination_buffer = Buffer.read(log.device, log.header.block[tail]);
+        const destination_buffer = getBuffer(log.header.block[tail]);
         defer destination_buffer.release();
 
         @memmove(&destination_buffer.data, &log_buffer.data);
@@ -93,7 +98,7 @@ fn installTransaction(is_recovering: bool) void {
 
 // Read the log header from disk into the in-memory log header
 fn readHead() void {
-    const buffer = Buffer.read(log.device, log.start);
+    const buffer = getBuffer(log.start);
     defer buffer.release();
 
     const disk_header: *Header = buffer.castData(Header);
@@ -104,7 +109,7 @@ fn readHead() void {
 // This is the true point at which the
 // current transaction commits.
 fn writeHead() void {
-    const buffer = Buffer.read(log.device, log.start);
+    const buffer = getBuffer(log.start);
     defer buffer.release();
 
     const disk_header: *Header = buffer.castData(Header);
@@ -171,10 +176,10 @@ pub fn endOperation() void {
 // Copy modified blocks from cache to log.
 fn writeLog() void {
     for (0..log.header.length) |tail| {
-        const buffer_destination = Buffer.read(log.device, @intCast(log.start + tail + 1)); // log block
+        const buffer_destination = getBuffer(@intCast(log.start + tail + 1)); // log block
         defer buffer_destination.release();
 
-        const buffer_source = Buffer.read(log.device, log.header.block[tail]); // cache block
+        const buffer_source = getBuffer(log.header.block[tail]); // cache block
         defer buffer_source.release();
 
         @memmove(&buffer_destination.data, &buffer_source.data);
@@ -209,13 +214,13 @@ pub fn write(buffer: *Buffer) void {
     if (log.header.length >= common.param.log_size or log.header.length >= log.size - 1) @panic("too big a transaction");
     if (log.outstanding < 1) @panic("log_write outside of trans");
 
-    var index: usize = 0;
+    var index: u32 = 0;
     while (index < log.header.length) : (index += 1) {
-        if (log.header.block[index] == buffer.block_number) {
+        if (log.header.block[index] == buffer.block.number) {
             break; // log absorption
         }
     }
-    log.header.block[index] = buffer.block_number;
+    log.header.block[index] = buffer.block.number;
     if (index == log.header.length) { // Add new block to log?
         buffer.pin();
         log.header.length += 1;
