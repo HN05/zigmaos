@@ -15,6 +15,7 @@ pub const initFileSystem = blocks.init;
 pub const beginOperation = log.beginOperation;
 pub const endOperation = log.endOperation;
 pub const block_size = blocks.block_size;
+pub const SuperBlock = blocks.SuperBlock;
 
 pub fn initBufferCache() void {
     Buffer.cache.init_array();

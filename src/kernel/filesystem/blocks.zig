@@ -5,8 +5,8 @@ const Buffer = @import("buffer.zig");
 const log = @import("log.zig");
 const Inode = @import("inode.zig");
 
-pub const root_inode_number = 1;
 pub const block_size = 1024;
+const bitmap_bits_per_block = block_size * 8;
 
 // Disk layout:
 // [ boot block | super block | log | inode blocks |
@@ -24,10 +24,19 @@ pub const SuperBlock = extern struct {
     inodestart: u32, // Block number of first inode block
     bmapstart: u32, // Block number of first free map block
 
-    const correct_magic = 0x10203040;
-
+    pub const correct_magic = 0x10203040;
     pub fn hasCorrectMagic(self: *SuperBlock) bool {
         return self.magic == correct_magic;
+    }
+
+    // Block of free map containing bit for block b
+    pub fn getFreeMapBlock(self: *SuperBlock, block: u32) u32 {
+        return block / bitmap_bits_per_block + self.bmapstart;
+    }
+
+    // Block containing inode i
+    pub fn getInodeBlock(self: *SuperBlock, inode_number: u32) u32 {
+        return inode_number / Inode.inodes_per_block + self.inodestart;
     }
 };
 
@@ -51,7 +60,7 @@ const BlockBitmap = struct {
     }
 
     pub fn markFree(self: BlockBitmap, bit_index: usize) void {
-        if (!isUsed(self, bit_index)) @panic("trying to free unused block");
+        if (!self.isUsed(bit_index)) @panic("trying to free unused block");
         const byte_index = bit_index / 8;
         const bit_offset: u3 = @intCast(bit_index % 8);
         const mask: u8 = @as(u8, 1) << bit_offset;
@@ -67,14 +76,6 @@ const BlockBitmap = struct {
         return null;
     }
 };
-
-// Bitmap bits per block
-pub const bitmap_bits_per_block = block_size * 8;
-
-// Block of free map containing bit for block b
-fn getFreeMapBlock(block: u32) u32 {
-    return block / bitmap_bits_per_block + superBlock.bmapstart;
-}
 
 // File system implementation.  Five layers:
 //   + Blocks: allocator for raw disk blocks.
@@ -124,7 +125,7 @@ pub fn blockAllocate(device: Device.ID) !u32 {
     while (block_number < superBlock.size) : (block_number += bitmap_bits_per_block) {
         var allocated_block: ?u32 = null;
         {
-            const buffer = Buffer.read(device, getFreeMapBlock(block_number));
+            const buffer = Buffer.read(device, superBlock.getFreeMapBlock(block_number));
             defer buffer.release();
 
             const bitmap = BlockBitmap{
@@ -151,7 +152,7 @@ pub fn blockAllocate(device: Device.ID) !u32 {
 
 // Free a disk block.
 pub fn blockFree(device: Device.ID, block_number: u32) void {
-    const buffer = Buffer.read(device, getFreeMapBlock(block_number));
+    const buffer = Buffer.read(device, superBlock.getFreeMapBlock(block_number));
     defer buffer.release();
 
     const bitmap = BlockBitmap{

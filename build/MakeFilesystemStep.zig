@@ -2,6 +2,10 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+
+const fs = @import("../src/kernel/filesystem/mod.zig");
+const Inode = fs.Inode;
+const Directory = fs.Directory;
 const os = std.os;
 const mem = std.mem;
 const math = std.math;
@@ -13,7 +17,6 @@ const InstallDir = Build.InstallDir;
 const CompileStep = Build.Step.Compile;
 const Step = Build.Step;
 
-const fs = @import("fs.zig");
 const stat = @import("../src/common/stat.zig");
 const param = @import("../src/common/param.zig");
 
@@ -22,11 +25,11 @@ const NINODES = 200;
 // Disk layout:
 // [ boot block | sb block | log | inode blocks | free bit map | data blocks ]
 
-const nbitmap: i32 = param.FSSIZE / (fs.BSIZE * 8) + 1;
-const ninodeblocks: i32 = NINODES / fs.IPB + 1;
+const nbitmap: i32 = param.FSSIZE / (fs.block_size * 8) + 1;
+const ninodeblocks: i32 = NINODES / Inode.inodes_per_block + 1;
 const nlog: i32 = param.log_size;
 
-const zeroes = [_]u8{0} ** fs.BSIZE;
+const zeroes = [_]u8{0} ** fs.block_size;
 var sb: fs.SuperBlock = undefined;
 var freeinode: u32 = 1;
 var freeblock: u32 = undefined;
@@ -93,12 +96,12 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
     var dir = try cwd.openDir(io, install_path, .{});
     defer dir.close(io);
 
-    var de: fs.Dirent = undefined;
-    var buf: [fs.BSIZE]u8 = undefined;
-    var din: fs.Dinode = undefined;
+    var de: Directory.DirectoryEntry = undefined;
+    var buf: [fs.block_size]u8 = undefined;
+    var din: Inode.DiskInode = undefined;
 
-    assert(fs.BSIZE % @sizeOf(fs.Dinode) == 0);
-    assert(fs.BSIZE % @sizeOf(fs.Dirent) == 0);
+    assert(fs.block_size % @sizeOf(Inode.DiskInode) == 0);
+    assert(fs.block_size % @sizeOf(Directory.DirectoryEntry) == 0);
 
     var flags = std.Io.Dir.CreateFileOptions{
         .read = true,
@@ -116,7 +119,7 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
     const nblocks = param.FSSIZE - nmeta;
 
     sb = fs.SuperBlock{
-        .magic = fs.FSMAGIC,
+        .magic = fs.SuperBlock.correct_magic,
         .size = param.FSSIZE,
         .nblocks = nblocks,
         .ninodes = NINODES,
@@ -138,17 +141,17 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
     try wsect(io, 1, &buf);
 
     const rootino = @as(u16, @intCast(try ialloc(io, .dir)));
-    std.debug.assert(rootino == fs.ROOTINO);
+    std.debug.assert(rootino == Inode.root_inode_number);
 
     @memset(mem.asBytes(&de), 0);
-    de.inum = mem.readVarInt(u16, mem.asBytes(&rootino), .little);
-    @memcpy(de.name[0..1], ".");
+    de.inode_number = mem.readVarInt(u16, mem.asBytes(&rootino), .little);
+    @memcpy(de.name_buffer[0..1], ".");
     de.name_length = 1;
     try iappend(io, @as(u32, rootino), mem.asBytes(&de));
 
     @memset(mem.asBytes(&de), 0);
-    de.inum = mem.readVarInt(u16, mem.asBytes(&rootino), .little);
-    @memcpy(de.name[0..2], "..");
+    de.inode_number = mem.readVarInt(u16, mem.asBytes(&rootino), .little);
+    @memcpy(de.name_buffer[0..2], "..");
     de.name_length = 2;
     try iappend(io, @as(u32, rootino), mem.asBytes(&de));
 
@@ -163,10 +166,10 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
             shortname = shortname[1..];
         }
 
-        var inum = @as(u16, @intCast(try ialloc(io, .file)));
+        var inode_number = @as(u16, @intCast(try ialloc(io, .file)));
         @memset(mem.asBytes(&de), 0);
-        de.inum = mem.readVarInt(u16, mem.asBytes(&inum), .little);
-        @memcpy(de.name[0..shortname.len], shortname);
+        de.inode_number = mem.readVarInt(u16, mem.asBytes(&inode_number), .little);
+        @memcpy(de.name_buffer[0..shortname.len], shortname);
         de.name_length = @intCast(shortname.len);
         try iappend(io, @as(u32, rootino), mem.asBytes(&de));
 
@@ -177,14 +180,14 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
                 else => return err,
             };
             if (amt == 0) break;
-            try iappend(io, @as(u32, inum), buf[0..amt]);
+            try iappend(io, @as(u32, inode_number), buf[0..amt]);
         }
     }
 
     // fix size of root inode dir
     try rinode(io, @as(u32, rootino), &din);
     var off = mem.readVarInt(u32, mem.asBytes(&din.size), .little);
-    off = ((off / fs.BSIZE) + 1) * fs.BSIZE;
+    off = ((off / fs.block_size) + 1) * fs.block_size;
     din.size = mem.readVarInt(u32, mem.asBytes(&off), .little);
     try winode(io, @as(u32, rootino), &din);
 
@@ -192,58 +195,58 @@ fn make(step: *Step, options: Step.MakeOptions) !void {
 }
 
 fn wsect(io: std.Io, sec: usize, buf: []const u8) !void {
-    std.debug.assert(buf.len == fs.BSIZE);
+    std.debug.assert(buf.len == fs.block_size);
 
-    const off = sec * fs.BSIZE;
+    const off = sec * fs.block_size;
     try file.writePositionalAll(io, buf, off);
 }
 
 fn rsect(io: std.Io, sec: usize, buf: []u8) !void {
-    std.debug.assert(buf.len == fs.BSIZE);
+    std.debug.assert(buf.len == fs.block_size);
 
-    const off = sec * fs.BSIZE;
+    const off = sec * fs.block_size;
     const bytes = try file.readPositionalAll(io, buf, off);
     std.debug.assert(bytes == buf.len);
 }
 
-fn winode(io: std.Io, inum: u32, ip: *fs.Dinode) !void {
-    var buf: [fs.BSIZE]u8 = undefined;
-    const bn = sb.IBLOCK(inum);
+fn winode(io: std.Io, inode_number: u32, ip: *Inode.DiskInode) !void {
+    var buf: [fs.block_size]u8 = undefined;
+    const bn = sb.getInodeBlock(inode_number);
     try rsect(io, bn, &buf);
-    const dip = buf[(inum % fs.IPB) * @sizeOf(fs.Dinode) ..];
+    const dip = buf[(inode_number % Inode.inodes_per_block) * @sizeOf(Inode.DiskInode) ..];
     const mem_bytes = mem.asBytes(ip);
     @memcpy(dip[0..mem_bytes.len], mem_bytes);
     try wsect(io, bn, &buf);
 }
 
-fn rinode(io: std.Io, inum: u32, ip: *fs.Dinode) !void {
-    var buf: [fs.BSIZE]u8 = undefined;
-    const bn = sb.IBLOCK(inum);
+fn rinode(io: std.Io, inode_number: u32, ip: *Inode.DiskInode) !void {
+    var buf: [fs.block_size]u8 = undefined;
+    const bn = sb.getInodeBlock(inode_number);
     try rsect(io, bn, &buf);
-    var dip = buf[(inum % fs.IPB) * @sizeOf(fs.Dinode) ..];
-    @memcpy(mem.asBytes(ip), dip[0..@sizeOf(fs.Dinode)]);
+    var dip = buf[(inode_number % Inode.inodes_per_block) * @sizeOf(Inode.DiskInode) ..];
+    @memcpy(mem.asBytes(ip), dip[0..@sizeOf(Inode.DiskInode)]);
 }
 
 fn ialloc(io: std.Io, file_type: stat.FileType) !u32 {
-    const inum = freeinode;
+    const inode_number = freeinode;
     defer freeinode += 1;
 
-    var din: fs.Dinode = undefined;
+    var din: Inode.DiskInode = undefined;
     @memset(mem.asBytes(&din), 0);
     var din_bytes = mem.toBytes(@intFromEnum(file_type));
-    din.type = mem.readVarInt(u16, &din_bytes, .little);
-    din.nlink = mem.readVarInt(u16, &[_]u8{1}, .little);
+    din.type = @enumFromInt(mem.readVarInt(u16, &din_bytes, .little));
+    din.link_count = mem.readVarInt(u16, &[_]u8{1}, .little);
     din.size = mem.readVarInt(u32, &[_]u8{0}, .little);
 
-    try winode(io, inum, &din);
-    return inum;
+    try winode(io, inode_number, &din);
+    return inode_number;
 }
 
 fn balloc(io: std.Io, used: usize) !void {
-    var buf: [fs.BSIZE]u8 = undefined;
+    var buf: [fs.block_size]u8 = undefined;
     @memset(&buf, 0);
 
-    std.debug.assert(used < fs.BSIZE * 8);
+    std.debug.assert(used < fs.block_size * 8);
 
     for (0..used) |i| {
         buf[i / 8] |= @as(u8, 0x1) << @as(u3, @intCast((i % 8)));
@@ -252,15 +255,15 @@ fn balloc(io: std.Io, used: usize) !void {
     try wsect(io, sb.bmapstart, &buf);
 }
 
-fn iappend(io: std.Io, inum: u32, data: []const u8) !void {
-    var din: fs.Dinode = undefined;
-    var buf: [fs.BSIZE]u8 = undefined;
+fn iappend(io: std.Io, inode_number: u32, data: []const u8) !void {
+    var din: Inode.DiskInode = undefined;
+    var buf: [fs.block_size]u8 = undefined;
     var n: usize = data.len;
     var n1: usize = undefined;
     var idx: usize = 0;
-    var indirect: [fs.NINDIRECT]u32 = undefined;
+    var indirect: [Inode.indirect_pointer_count]u32 = undefined;
 
-    try rinode(io, inum, &din);
+    try rinode(io, inode_number, &din);
     var off = mem.readVarInt(u32, mem.asBytes(&din.size), .little);
 
     while (n > 0) : ({
@@ -268,9 +271,9 @@ fn iappend(io: std.Io, inum: u32, data: []const u8) !void {
         off += @as(u32, @intCast(n1));
         idx += n1;
     }) {
-        const fbn = off / fs.BSIZE;
-        std.debug.assert(fbn < fs.MAXFILE);
-        const x = if (fbn < fs.NDIRECT) blk: {
+        const fbn = off / fs.block_size;
+        std.debug.assert(fbn < Inode.max_file_block_count);
+        const x = if (fbn < Inode.direct_pointer_count) blk: {
             if (mem.readVarInt(u32, mem.asBytes(&din.addrs[fbn]), .little) == 0) {
                 const fblk = mem.readVarInt(u32, mem.asBytes(&freeblock), .little);
                 defer freeblock += 1;
@@ -278,26 +281,26 @@ fn iappend(io: std.Io, inum: u32, data: []const u8) !void {
             }
             break :blk mem.readVarInt(usize, mem.asBytes(&din.addrs[fbn]), .little);
         } else blk: {
-            if (mem.readVarInt(u32, mem.asBytes(&din.addrs[fs.NDIRECT]), .little) == 0) {
+            if (mem.readVarInt(u32, mem.asBytes(&din.addrs[Inode.direct_pointer_count]), .little) == 0) {
                 const fblk = mem.readVarInt(u32, mem.asBytes(&freeblock), .little);
                 defer freeblock += 1;
-                din.addrs[fs.NDIRECT] = fblk;
+                din.addrs[Inode.direct_pointer_count] = fblk;
             }
-            const num = mem.readVarInt(usize, mem.asBytes(&din.addrs[fs.NDIRECT]), .little);
+            const num = mem.readVarInt(usize, mem.asBytes(&din.addrs[Inode.direct_pointer_count]), .little);
             try rsect(io, num, mem.sliceAsBytes(&indirect));
-            if (indirect[fbn - fs.NDIRECT] == 0) {
+            if (indirect[fbn - Inode.direct_pointer_count] == 0) {
                 const fblk = mem.readVarInt(u32, mem.asBytes(&freeblock), .little);
                 defer freeblock += 1;
-                indirect[fbn - fs.NDIRECT] = fblk;
+                indirect[fbn - Inode.direct_pointer_count] = fblk;
                 try wsect(io, num, mem.sliceAsBytes(&indirect));
             }
-            break :blk mem.readVarInt(usize, mem.asBytes(&indirect[fbn - fs.NDIRECT]), .little);
+            break :blk mem.readVarInt(usize, mem.asBytes(&indirect[fbn - Inode.direct_pointer_count]), .little);
         };
-        n1 = @min(n, (fbn + 1) * fs.BSIZE - off);
+        n1 = @min(n, (fbn + 1) * fs.block_size - off);
         try rsect(io, x, &buf);
-        @memcpy(buf[off - (fbn * fs.BSIZE) ..][0..n1], data[idx..][0..n1]);
+        @memcpy(buf[off - (fbn * fs.block_size) ..][0..n1], data[idx..][0..n1]);
         try wsect(io, x, &buf);
     }
     din.size = mem.readVarInt(u32, mem.asBytes(&off), .little);
-    try winode(io, inum, &din);
+    try winode(io, inode_number, &din);
 }
