@@ -105,9 +105,10 @@ pub fn build(b: *std.Build) !void {
     });
 
     const initcode_obj = b.addSystemCommand(&.{
-        "riscv64-linux-gnu-gcc",
-        "-march=rv64g",
-        "-mabi=lp64",
+        b.graph.zig_exe,
+        "cc",
+        "-target",
+        "riscv64-freestanding-none",
         "-nostdlib",
         "-nostartfiles",
         "-c",
@@ -117,10 +118,13 @@ pub fn build(b: *std.Build) !void {
     initcode_obj.addFileArg(b.path("src/kernel/execution/initcode.S"));
 
     const initcode_elf = b.addSystemCommand(&.{
-        "riscv64-linux-gnu-ld",
+        b.graph.zig_exe,
+        "ld.lld",
+        "-m",
+        "elf64lriscv",
         "-z",
         "max-page-size=4096",
-        "--no-warn-rwx-segments",
+        "--image-base=0",
         "-N",
         "-e",
         "start",
@@ -132,8 +136,8 @@ pub fn build(b: *std.Build) !void {
     initcode_elf.addFileArg(initcode_obj_file);
 
     const initcode_bin = b.addSystemCommand(&.{
-        "riscv64-linux-gnu-objcopy",
-        "-S",
+        b.graph.zig_exe,
+        "objcopy",
         "-O",
         "binary",
     });
