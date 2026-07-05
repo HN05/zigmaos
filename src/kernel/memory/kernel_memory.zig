@@ -11,12 +11,6 @@ const csr = kernel.riscv.csr;
 
 var kernel_pagetable: pg.PageTablePtr = undefined;
 
-//  TODO: move
-inline fn memoryFence() void {
-    // the zero, zero means flush all TLB entries.
-    asm volatile ("sfence.vma zero, zero");
-}
-
 fn kernelVirtualMap(
     virtualAddress: ad.UserAddress,
     physicalAddress: ad.KernelAddress,
@@ -62,9 +56,9 @@ pub fn initPageTable() void {
 // and enable paging.
 pub fn enablePaging() void {
     // wait for any previous writes to the page table memory to finish.
-    memoryFence();
+    kernel.riscv.memoryFence();
     csr.Satp.write(kernel_pagetable);
     // flush stale entries from the TLB.
-    memoryFence();
+    kernel.riscv.memoryFence();
 }
 

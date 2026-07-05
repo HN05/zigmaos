@@ -64,8 +64,6 @@ pub fn create(
         self.step.dependOn(&artifact.step);
     }
 
-    //  TODO: remove
-    // owner.pushInstalledFile(self.dest_dir, dest_filename);
     return self;
 }
 

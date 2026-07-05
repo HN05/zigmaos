@@ -19,6 +19,7 @@ const execution = kernel.execution;
 const fs = kernel.filesystem;
 const Buffer = fs.Buffer;
 const page_size = mem.pages.page_size;
+const fullMemoryBarrier = kernel.riscv.fullMemoryBarrier;
 
 var disk: Disk = undefined;
 
@@ -164,10 +165,6 @@ fn allocDescriptorsSlice(descriptor_destination: []u16) !void {
             return error.CouldNotAllocateDescriptor;
         };
     }
-}
-
-inline fn fullMemoryBarrier() void {
-    asm volatile ("fence rw, rw" ::: .{ .memory = true });
 }
 
 pub fn read(buffer: *Buffer) void {
