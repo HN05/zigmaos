@@ -140,7 +140,7 @@ pub fn build(b: *std.Build) !void {
     initcode_bin.addFileArg(initcode_elf_file);
     const initcode_bin_file = initcode_bin.addOutputFileArg("initcode.bin");
 
-    kernel_mod.addAnonymousImport("initcode_bin", .{
+    kernel_mod.addAnonymousImport("initcode", .{
         .root_source_file = initcode_bin_file,
     });
 
