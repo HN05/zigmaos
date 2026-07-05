@@ -109,8 +109,6 @@ pub fn build(b: *std.Build) !void {
         "cc",
         "-target",
         "riscv64-freestanding-none",
-        "-nostdlib",
-        "-nostartfiles",
         "-c",
         "-o",
     });
