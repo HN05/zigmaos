@@ -242,6 +242,7 @@ fn free(process: *Process) void {
 
 // a user program that calls exec("/init")
 // assembled from initcode.S
+//  TODO: remove and use modern way
 const initcode = @embedFile("initcode");
 
 // nice formatted
@@ -309,6 +310,8 @@ pub fn changeProcessSize(size_diff: i64) !void {
     const old_size = current.size;
     const abs_size_diff: usize = @abs(size_diff);
     if (size_diff > 0) {
+        const trapframe_va = mem.layout.trapframe_virtual_address.toInt();
+        if (old_size >= trapframe_va or abs_size_diff > trapframe_va - old_size) return error.OutOfMem;
         current.size = try mem.user.alloc(current.pageTable, old_size, old_size + abs_size_diff, .{ .read = true, .write = true });
     } else if (size_diff < 0) {
         current.size = mem.user.dealloc(current.pageTable, old_size, old_size - abs_size_diff);

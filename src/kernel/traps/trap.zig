@@ -76,6 +76,7 @@ export fn usertrap() usize {
             handleDeviceInterrupt(scause);
         },
         .exception => {
+            //  TODO: do vm fault
             print("usertrap(): unexpected scause {x} pid={d}\n", .{ scause.raw(), process.pid_unsafe });
             print("            sepc={x} stval={x}\n", .{ csr.Sepc.read(), csr.Stval.read() });
             process.setKilled();
@@ -211,6 +212,7 @@ fn handleDeviceInterrupt(scause: csr.Scause) void {
             plic.complete(irq);
         },
         .supervisorSoftwareInterrupt => {
+            //  TODO: do new modern way
             // software interrupt from a machine-mode timer interrupt,
             // forwarded by timervec in kernelvec.S.
             if (execution.Cpu.getCurrentId() == 0) {
