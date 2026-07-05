@@ -2,14 +2,10 @@
 // run random system calls in parallel forever.
 //
 
-#include "user/kernel_legacy/param.h"
 #include "user/kernel_legacy/types.h"
 #include "user/kernel_legacy/stat.h"
 #include "user/user.h"
-#include "user/kernel_legacy/fs.h"
 #include "user/kernel_legacy/fcntl.h"
-#include "user/kernel_legacy/memlayout.h"
-#include "user/kernel_legacy/riscv.h"
 
 // from FreeBSD.
 int
