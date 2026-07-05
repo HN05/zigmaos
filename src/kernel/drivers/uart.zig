@@ -13,13 +13,13 @@ const conc = kernel.concurrency;
 /// see http://byterunner.com/16550.html
 
 // set baud rate to 38.4K
-const baud_rate = 0x0003;
+const baud_divisor = 0x0003;
 
 pub fn init() void {
     interrupt_enable_register.disableInterrupts();
 
     line_control_register.startEditBaudRate();
-    line_control_register.setBaudRate(baud_rate);
+    line_control_register.setBaudRate(baud_divisor);
 
     // set word length to 8 bits, no parity.
     line_control_register.endEditBaudRate(.eight_bits_no_parity);
@@ -188,9 +188,9 @@ const line_control_register = struct {
         register.write(baud_latch);
     }
 
-    pub fn setBaudRate(value: u16) void {
-        const lsb: u8 = @truncate(value);
-        const msb: u8 = @truncate(value >> 8);
+    pub fn setBaudRate(baud_div: u16) void {
+        const lsb: u8 = @truncate(baud_div);
+        const msb: u8 = @truncate(baud_div >> 8);
         lsb_register.write(lsb);
         msb_register.write(msb);
     }
