@@ -94,7 +94,7 @@ pub fn trampolinePhysicalAddress() ad.KernelAddress {
 
 // map kernel stacks beneath the trampoline,
 // each surrounded by invalid guard pages.
-pub inline fn KSTACK(processId: usize) ad.UserAddress {
+pub inline fn kernelStackAddress(processId: usize) ad.UserAddress {
     return .fromInt(trampoline_virtual_int - (processId + 1) * (kernel_stack_page_count + 1) * riscv.page_size);
 }
 

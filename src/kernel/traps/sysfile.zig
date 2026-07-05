@@ -342,6 +342,7 @@ pub fn open() !usize {
     if (inode.disk_inode.type == .device and (inode.disk_inode.device.major >= Device.max_device_count)) return OpenErrors.InvalidDeviceMajor;
 
     const file = File.alloc() orelse return OpenErrors.FailedAllocFile;
+    //  TODO: investigate possible double put
     errdefer file.close();
 
     if (inode.disk_inode.type == .device) {
@@ -362,7 +363,8 @@ pub fn open() !usize {
         inode.truncate();
     }
 
-    return sysargs.fileDescriptorAllocate(file);
+    const fd = try sysargs.fileDescriptorAllocate(file);
+    return fd;
 }
 
 pub fn sys_mkdir() u64 {

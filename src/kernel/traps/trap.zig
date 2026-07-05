@@ -152,6 +152,11 @@ export fn kerneltrap() void {
         @panic("kerneltrap: not from supervisor mode");
     }
     if (badKernelPc(sepc)) {
+        print("sp={x} kstack_lowest={x} trapframe={x}\n", .{
+            riscv.Register.read(.sp),
+            memlayout.kernelStackAddress(common.param.NPROC - 1).toInt(),
+            memlayout.trapframe_virtual_address.toInt(),
+        });
         print("BAD SUPERVISOR PC sepc={x} stval={x} stvec={x} sp={x} ra={x}\n", .{
             sepc,
             stval,

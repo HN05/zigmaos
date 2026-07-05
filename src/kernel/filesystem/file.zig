@@ -211,6 +211,7 @@ pub fn write(file: *File, address: UserAddress, write_count: u32) !u32 {
                 inode_file.offset += iteration_bytes_written;
 
                 if (iteration_bytes_written != bytes_to_write) break; // error from inode write
+                //  TODO: check modern version
                 bytes_written += iteration_bytes_written;
             }
             if (bytes_written != write_count) return error.WriteToInodeFailed;

@@ -24,7 +24,7 @@ const File = fs.File;
 pub var processTable: [param.NPROC]Process = blk: {
     var table: [param.NPROC]Process = undefined;
     for (0..table.len) |index| {
-        table[index] = .{ .kernelStackAddress = ml.KSTACK(index) };
+        table[index] = .{ .kernelStackAddress = ml.kernelStackAddress(index) };
     }
     break :blk table;
 };
@@ -43,7 +43,7 @@ pub var waitLock: Mutex = .init(.spin, "wait_lock");
 // guard page.
 pub fn mapKernelStacks(map_func: *const fn (ad.UserAddress, ad.KernelAddress, usize, mem.pages.MappingKind) void) void {
     inline for (0..processTable.len) |index| {
-        const virtualAddress = ml.KSTACK(index);
+        const virtualAddress = ml.kernelStackAddress(index);
 
         inline for (0..ml.kernel_stack_page_count) |i| {
             const virtual_page_address = virtualAddress.add(i * mem.pages.page_size);
