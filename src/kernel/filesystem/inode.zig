@@ -435,7 +435,7 @@ pub fn write(inode: *Inode, source_address: ad.AnyAddress, offset: u32, count: u
 
         const block_offset = current_offset % DiskBlock.block_size;
         const bytes_this_block = @min(count - bytes_written, DiskBlock.block_size - block_offset);
-        try mem.boundry.eitherCopyIn(current_source, buffer.data[block_offset .. block_offset + bytes_this_block]);
+        mem.boundry.eitherCopyIn(current_source, buffer.data[block_offset .. block_offset + bytes_this_block]) catch break;
 
         log.write(buffer);
 
