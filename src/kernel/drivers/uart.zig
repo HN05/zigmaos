@@ -27,14 +27,41 @@ const line_status_register = 5; // line status register
 const line_status_receive_ready = 1 << 0; // input is waiting to be read from RHR
 const line_status_transmit_idle = 1 << 5; // THR can accept another character to send
 
-const transmit_buf_size = 32;
+const Transmit = struct {
+    const buffer_size = 32;
 
-var transmit_lock: conc.Mutex = .init(.spin, "uart transmit lock");
-var transmit_buf: [transmit_buf_size]u8 = [_]u8{0} ** transmit_buf_size;
-var transmit_w: u64 = 0; // write next to uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE]
-var transmit_r: u64 = 0; // read next from uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE]
+    lock: conc.Mutex = .init(.spin, "uart transmit lock"),
+    buffer: [buffer_size]u8 = [_]u8{0} ** buffer_size,
+    write_count: u64 = 0, // write next to uart_tx_buf[uart_tx_w % UART_TX_BUF_SIZE]
+    read_count: u64 = 0, // read next from uart_tx_buf[uart_tx_r % UART_TX_BUF_SIZE]
 
-pub const Error = error{NotReady};
+    pub fn isFull(self: *Transmit) bool {
+        return self.write_count == (self.read_count + buffer_size);
+    }
+
+    pub fn isEmpty(self: *Transmit) bool {
+        return self.write_count == self.read_count;
+    }
+
+    pub fn sleep(self: *Transmit) void {
+        self.lock.sleepOn(&self.read_count);
+    }
+
+    pub fn transmitChar(self: *Transmit, char: u8) void {
+        self.buffer[self.write_count % buffer_size] = char;
+        self.write_count += 1;
+    }
+
+    pub fn readChar(self: *Transmit) u8 {
+        const character = self.buffer[self.read_count % buffer_size];
+        self.read_count += 1;
+
+        // maybe uartputc() is waiting for space in the buffer.
+        execution.scheduler.wakeup(&self.read_count);
+        return character;
+    }
+};
+var transmit = Transmit{};
 
 pub fn init() void {
     // disable interrupts.
@@ -66,19 +93,18 @@ pub fn init() void {
 // because it may block, it can't be called
 // from interrupts; it's only suitable for use
 // by write().
-pub fn putCharacter(ch: u8) void {
-    transmit_lock.acquire();
-    defer transmit_lock.release();
+pub fn putCharacter(char: u8) void {
+    transmit.lock.acquire();
+    defer transmit.lock.release();
 
     if (log.panicked.*) while (true) {};
 
-    while (transmit_w == transmit_r + transmit_buf_size) {
+    while (transmit.isFull()) {
         // buffer is full.
         // wait for uartstart() to open up space in the buffer.
-        transmit_lock.sleepOn(&transmit_r);
+        transmit.sleep();
     }
-    transmit_buf[transmit_w % transmit_buf_size] = ch;
-    transmit_w += 1;
+    transmit.transmitChar(char);
     start();
 }
 
@@ -103,7 +129,7 @@ pub fn putCharSync(ch: u8) void {
 /// called from both the top- and bottom-half.
 pub fn start() void {
     while (true) {
-        if (transmit_w == transmit_r) {
+        if (transmit.isEmpty()) {
             // transmit buffer is empty.
             return;
         }
@@ -115,11 +141,7 @@ pub fn start() void {
             return;
         }
 
-        const character = transmit_buf[transmit_r % transmit_buf_size];
-        transmit_r += 1;
-
-        // maybe uartputc() is waiting for space in the buffer.
-        execution.scheduler.wakeup(&transmit_r);
+        const character = transmit.readChar();
 
         writeReg(transmit_holding_register, character);
     }
@@ -147,8 +169,8 @@ pub fn interrupt() void {
     }
 
     // send buffered characters.
-    transmit_lock.acquire();
-    defer transmit_lock.release();
+    transmit.lock.acquire();
+    defer transmit.lock.release();
 
     start();
 }
