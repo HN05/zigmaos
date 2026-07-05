@@ -4,10 +4,10 @@ const ad = @import("address.zig");
 const pg = @import("pages.zig");
 const alloc = @import("allocation.zig");
 const ml = @import("layout.zig");
-const csr = @import("../csr.zig");
 const vm = @import("virtual_memory.zig");
 
 const execution = kernel.execution;
+const csr = kernel.riscv.csr;
 
 var kernel_pagetable: pg.PageTablePtr = undefined;
 

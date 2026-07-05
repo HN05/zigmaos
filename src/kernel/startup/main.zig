@@ -2,9 +2,7 @@ const kernel = @import("root");
 const std = @import("std");
 const common = @import("common");
 
-const log_root = @import("../klog.zig");
-const plic = @import("../plic.zig");
-
+const plic = kernel.riscv.plic;
 const execution = kernel.execution;
 const traps = kernel.traps;
 const mem = kernel.memory;

@@ -5,12 +5,14 @@ pub const drivers = @import("drivers/mod.zig");
 pub const filesystem = @import("filesystem/mod.zig");
 pub const memory = @import("memory/mod.zig");
 pub const traps = @import("traps/mod.zig");
+pub const logging = @import("logging/mod.zig");
+pub const datastructures = @import("datastructures/mod.zig");
+pub const riscv = @import("riscv/mod.zig");
 
 // for starting kernel
 const std = @import("std");
 const start_file = @import("startup/start.zig");
 const param = @import("common").param;
-const log_root = @import("klog.zig");
 
 export fn start() void {
     start_file.start();
@@ -26,7 +28,7 @@ pub const std_options = std.Options{
     // Set the log level to info
     .log_level = .debug,
     // Define logFn to override the std implementation
-    .logFn = log_root.klogFn,
+    .logFn = logging.klogFn,
 };
 
 pub fn panic(
@@ -37,8 +39,8 @@ pub fn panic(
     @branchHint(.cold);
     _ = error_return_trace;
     const panic_log = std.log.scoped(.panic);
-    log_root.locking = false;
+    logging.locking.* = false;
     panic_log.err("{s}\n", .{msg});
-    log_root.panicked = true; // freeze uart output from other CPUs
+    logging.panicked.* = true; // freeze uart output from other CPUs
     while (true) {}
 }

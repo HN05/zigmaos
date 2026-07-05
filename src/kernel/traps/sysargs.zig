@@ -2,8 +2,7 @@ const kernel = @import("root");
 const std = @import("std");
 const common = @import("common");
 
-const log = @import("../klog.zig");
-
+const log = kernel.logging;
 const mem = kernel.memory;
 const UserAddress = mem.address.UserAddress;
 const Process = kernel.execution.Process;

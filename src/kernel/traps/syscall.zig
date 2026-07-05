@@ -1,12 +1,12 @@
 const kernel = @import("root");
 const std = @import("std");
 
-const log = @import("../klog.zig");
 const procsyscalls = @import("sysproc.zig");
 const filesyscalls = @import("sysfile.zig");
 const SyscallNum = @import("syscallnum.zig").SyscallNum;
 
 const execution = kernel.execution;
+const log = kernel.logging;
 
 pub fn handler() void {
     const process = execution.Process.getCurrentForce();

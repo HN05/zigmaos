@@ -2,13 +2,13 @@ const kernel = @import("root");
 const std = @import("std");
 const common = @import("common");
 
-const csr = @import("../csr.zig");
-const print = @import("../klog.zig").print;
-const plic = @import("../plic.zig");
-const cpu_ticks = @import("../ticks.zig").cpu_ticks;
 const syscall = @import("syscall.zig");
 
+const print = kernel.logging.print;
 const execution = kernel.execution;
+const csr = kernel.riscv.csr;
+const plic = kernel.riscv.plic;
+const cpu_ticks = execution.cpu_ticks;
 const page_size = kernel.memory.pages.page_size;
 const memlayout = kernel.memory.layout;
 const drivers = kernel.drivers;

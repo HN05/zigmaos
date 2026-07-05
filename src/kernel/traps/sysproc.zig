@@ -1,9 +1,9 @@
 const kernel = @import("root");
 
-const log = @import("../klog.zig");
 const sysargs = @import("sysargs.zig");
-const cpu_ticks = @import("../ticks.zig").cpu_ticks;
 
+const log = kernel.logginge;
+const cpu_ticks = kernel.execution.cpu_ticks;
 const Process = kernel.execution.Process;
 
 pub fn sys_exit() u64 {

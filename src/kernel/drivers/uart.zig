@@ -1,9 +1,9 @@
 const kernel = @import("root");
 
-const log_root = @import("../klog.zig");
 const console = @import("console.zig");
 
 const execution = kernel.execution;
+const log = kernel.logging;
 const memlayout = kernel.memory.layout;
 const conc = kernel.concurrency;
 
@@ -70,7 +70,7 @@ pub fn putCharacter(ch: u8) void {
     transmit_lock.acquire();
     defer transmit_lock.release();
 
-    if (log_root.panicked) while (true) {};
+    if (log.panicked.*) while (true) {};
 
     while (transmit_w == transmit_r + transmit_buf_size) {
         // buffer is full.
@@ -90,7 +90,7 @@ pub fn putCharSync(ch: u8) void {
     conc.interrupts.pushOff();
     defer conc.interrupts.popOff();
 
-    if (log_root.panicked) while (true) {};
+    if (log.panicked.*) while (true) {};
 
     // wait for Transmit Holding Empty to be set in LSR.
     while ((readReg(line_status_register) & line_status_transmit_idle) == 0) {}

@@ -1,6 +1,6 @@
 const kernel = @import("root");
 
-const Sstatus = @import("../csr.zig").Sstatus;
+const Sstatus = kernel.riscv.csr.Sstatus;
 const execution = kernel.execution;
 
 // enable device interrupts

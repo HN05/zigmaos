@@ -2,11 +2,11 @@ const std = @import("std");
 const common = @import("common");
 const kernel = @import("root");
 
-const csr = @import("../csr.zig");
 const main = @import("main.zig");
 
 const Register = common.riscv.Register;
 const ml = kernel.memory.layout;
+const csr = kernel.riscv.csr;
 const param = common.param;
 
 // a scratch area per CPU for machine-mode timer interrupts.

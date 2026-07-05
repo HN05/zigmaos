@@ -60,7 +60,7 @@ pub fn print(comptime format: []const u8, args: anytype) void {
     console.writeBytes(out);
 }
 
-pub export fn printf(format: [*:0]const u8, ...) void {
+pub fn printf(format: [*:0]const u8, ...) void {
     @setRuntimeSafety(false);
     const need_lock = locking;
     if (need_lock) lock.acquire();

@@ -2,8 +2,8 @@ const kernel = @import("root");
 const common = @import("common");
 const std = @import("std");
 
-const ringbuf = @import("../ringbuf.zig");
-const print = @import("../klog.zig").print;
+const ringbuf = kernel.datastructures.ringbuf;
+const print = kernel.logging.print;
 const scheduler = @import("scheduler.zig");
 const Cpu = @import("cpu.zig");
 

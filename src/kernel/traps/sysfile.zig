@@ -9,9 +9,8 @@ const kernel = @import("root");
 const common = @import("common");
 
 const sysargs = @import("sysargs.zig");
-const log = @import("../debuglog.zig");
-const ringbuf = @import("../ringbuf.zig");
 
+const ringbuf = kernel.datastructures.ringbuf;
 const mem = kernel.memory;
 const ad = mem.address;
 const alloc = mem.allocation;
@@ -24,16 +23,17 @@ const Directory = fs.Directory;
 const File = fs.File;
 const Inode = fs.Inode;
 const Device = fs.Device;
+const log = kernel.logging;
 
 
 pub fn sys_dup() u64 {
     const file = sysargs.getFile(.a0) catch |err| {
-        log.print("could not get file: {s}", .{@errorName(err)});
+        log.debugLog("could not get file: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
     const fd = sysargs.fileDescriptorAllocate(file) catch |err| {
-        log.print("could not allocate new file descriptor: {s}", .{@errorName(err)});
+        log.debugLog("could not allocate new file descriptor: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
@@ -46,7 +46,7 @@ pub fn sys_read() u64 {
     const number = sysargs.getInt(.a2);
 
     const file = sysargs.getFile(.a0) catch |err| {
-        log.print("could not get file: {s}", .{@errorName(err)});
+        log.debugLog("could not get file: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
@@ -58,7 +58,7 @@ pub fn sys_write() u64 {
     const number = sysargs.getInt(.a2);
 
     const file = sysargs.getFile(.a0) catch |err| {
-        log.print("could not get file: {s}", .{@errorName(err)});
+        log.debugLog("could not get file: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
@@ -68,7 +68,7 @@ pub fn sys_write() u64 {
 pub fn sys_close() u64 {
     var file: *File = undefined;
     const fd = sysargs.getFileAndDescriptor(.a0, &file) catch |err| {
-        log.print("could not get file: {s}", .{@errorName(err)});
+        log.debugLog("could not get file: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
@@ -82,7 +82,7 @@ pub fn sys_fstat() u64 {
     const stat = sysargs.getAddress(.a1) orelse return sysargs.errorVal;
 
     const file = sysargs.getFile(.a0) catch |err| {
-        log.print("could not get file: {s}", .{@errorName(err)});
+        log.debugLog("could not get file: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
@@ -92,7 +92,7 @@ pub fn sys_fstat() u64 {
 
 pub fn sys_link() u64 {
     link() catch |err| {
-        log.print("could not get link: {s}", .{@errorName(err)});
+        log.debugLog("could not get link: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
     return 0;
@@ -158,7 +158,7 @@ pub fn link() LinkErrors!void {
 
 pub fn sys_unlink() u64 {
     unlink() catch |err| {
-        log.print("could not get link: {s}", .{@errorName(err)});
+        log.debugLog("could not get link: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
     return 0;
@@ -310,7 +310,7 @@ pub const OpenMode = packed struct {
 
 pub fn sys_open() u64 {
     const fd = open() catch |err| {
-        log.print("could not open path: {s}", .{@errorName(err)});
+        log.debugLog("could not open path: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
     return fd;
@@ -368,7 +368,7 @@ pub fn open() !usize {
 pub fn sys_mkdir() u64 {
     var path: [Inode.max_path_size]u8 = undefined;
     const pathLen = sysargs.getString(.a0, &path) catch |err| {
-        log.print("could not get path: {s}", .{@errorName(err)});
+        log.debugLog("could not get path: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
@@ -376,7 +376,7 @@ pub fn sys_mkdir() u64 {
     defer fs.endOperation();
 
     const inode = create(path[0..pathLen], .directory, .{ .major = 0, .minor = 0 }) catch |err| {
-        log.print("could not create dir: {s}", .{@errorName(err)});
+        log.debugLog("could not create dir: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
     inode.releasePut();
@@ -387,7 +387,7 @@ pub fn sys_mkdir() u64 {
 pub fn sys_mknod() u64 {
     var path: [Inode.max_path_size]u8 = undefined;
     const pathLen = sysargs.getString(.a0, &path) catch |err| {
-        log.print("could not get path: {s}", .{@errorName(err)});
+        log.debugLog("could not get path: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 
@@ -395,13 +395,13 @@ pub fn sys_mknod() u64 {
     const minor = sysargs.getInt(.a2);
 
     if (major >= Device.max_device_count) {
-        log.print("major out of range", .{});
+        log.debugLog("major out of range", .{});
         return sysargs.errorVal;
     }
 
     const Minor = @FieldType(Device.ID, "minor");
     if (minor >= std.math.maxInt(Minor)) {
-        log.print("minor out of range", .{});
+        log.debugLog("minor out of range", .{});
         return sysargs.errorVal;
     }
 
@@ -409,7 +409,7 @@ pub fn sys_mknod() u64 {
     defer fs.endOperation();
 
     const inode = create(path[0..pathLen], .device, .{ .major = @intCast(major), .minor = @intCast(minor) }) catch |err| {
-        log.print("could not create node: {s}", .{@errorName(err)});
+        log.debugLog("could not create node: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
     inode.releasePut();
@@ -419,7 +419,7 @@ pub fn sys_mknod() u64 {
 
 pub fn sys_chdir() u64 {
     chdir() catch |err| {
-        log.print("could not get link: {s}", .{@errorName(err)});
+        log.debugLog("could not get link: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
     return 0;
@@ -451,7 +451,7 @@ pub fn chdir() ChdirErrors!void {
 
 pub fn sys_exec() u64 {
     return exec() catch |err| {
-        log.print("could not exec: {s}", .{@errorName(err)});
+        log.debugLog("could not exec: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
 }
@@ -500,7 +500,7 @@ pub fn exec() !u64 {
 
 pub fn sys_pipe() u64 {
     pipe() catch |err| {
-        log.print("could not pipe: {s}", .{@errorName(err)});
+        log.debugLog("could not pipe: {s}", .{@errorName(err)});
         return sysargs.errorVal;
     };
     return 0;
