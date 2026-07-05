@@ -277,7 +277,7 @@ pub fn initFirstUser() void {
     initialProcess.state_unsafe = .runnable;
 }
 
-var first_fork = true;
+var first_fork = std.atomic.Value(bool).init(true);
 // A fork child's very first scheduling by scheduler()
 // will switchContext to forkret.
 fn forkReturn() void {
@@ -285,14 +285,22 @@ fn forkReturn() void {
     // Still holding p->lock from scheduler.
     getCurrentForce().lock.release();
 
-    if (first_fork) {
-        // File system initialization must be run in the context of a
-        // regular process (e.g., because it calls sleep), and thus cannot
-        // be run from main().
-        first_fork = false;
+    // File system initialization must be run in the context of a
+    // regular process (e.g., because it calls sleep), and thus cannot
+    // be run from main().
+    if (first_fork.cmpxchgStrong(true, false, .seq_cst, .seq_cst) == null) {
         fs.initFileSystem(.root_fs_device);
     }
-    traps.usertrapret();
+
+    //  TODO: move this
+    const satp = traps.prepareReturn();
+    const trampoline = mem.layout.trampolinePhysicalAddress();
+    const userret_offset = traps.userRetAddress() - trampoline.toInt();
+
+    const trampoline_userret: *const fn (usize) callconv(.c) noreturn =
+        @ptrFromInt(ml.trampoline_virtual_int + userret_offset);
+
+    trampoline_userret(satp);
 }
 
 // Grow or shrink user memory by n bytes.

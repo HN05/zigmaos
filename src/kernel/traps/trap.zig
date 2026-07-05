@@ -21,22 +21,34 @@ extern const userret: anyopaque;
 
 extern fn kernelvec() void;
 
+fn kernelVecAddress() usize {
+    return @intFromPtr(&kernelvec);
+}
+
+pub fn userRetAddress() usize {
+    return @intFromPtr(&userret);
+}
+
+fn userVecAddress() usize {
+    return @intFromPtr(&uservec);
+}
+
 pub fn initHart() void {
-    csr.Stvec.write(@intFromPtr(&kernelvec));
+    csr.Stvec.write(kernelVecAddress());
 }
 
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
 //
-export fn usertrap() void {
+export fn usertrap() usize {
     if (csr.Sstatus.isSet(.SPP)) {
         @panic("usertrap: not from user mode");
     }
 
     // send interrupts and exceptions to kerneltrap(),
     // since we're now in the kernel.
-    csr.Stvec.write(@intFromPtr(&kernelvec));
+    csr.Stvec.write(kernelVecAddress());
 
     const process = Process.getCurrentForce();
 
@@ -70,75 +82,83 @@ export fn usertrap() void {
         },
     }
 
-    if (process.isKilled()) {
-        Process.exit(-1);
-    }
+    if (process.isKilled()) Process.exit(-1);
 
     // give up the CPU if this is a timer interrupt.
     if (scause == .supervisorSoftwareInterrupt) {
         execution.scheduler.yield();
     }
 
-    usertrapret();
+    return prepareReturn();
 }
 
 //
 // return to user space
 //
-pub fn usertrapret() void {
+pub fn prepareReturn() usize {
     const process = Process.getCurrentForce();
-    const trampoline_int = memlayout.trampolinePhysicalAddress().toInt();
-    const uservec_int = @intFromPtr(&uservec);
-    const userret_int = @intFromPtr(&userret);
 
-    // we're about to switch the destination of traps from
-    // kerneltrap() to usertrap(), so turn off interrupts until
-    // we're back in user space, where usertrap() is correct.
     conc.interrupts.disable();
 
-    // send syscalls, interrupts, and exceptions to uservec in trampoline.S
-    const trampoline_uservec = memlayout.trampoline_virtual_address.add(uservec_int - trampoline_int);
+    const trampoline_base = memlayout.trampolinePhysicalAddress();
+    const uservec_offset = userVecAddress() - trampoline_base.toInt();
+    const trampoline_uservec = memlayout.trampoline_virtual_address.add(uservec_offset);
     csr.Stvec.write(trampoline_uservec.toInt());
 
-    // set up trapframe values that uservec will need when
-    // the process next traps into the kernel.
     const trapframe: *Process.TrapFrame = process.trapFrame;
-    trapframe.kernel_satp = csr.Satp.readInt(); // kernel page table
-    trapframe.kernel_sp = process.kernelStackAddress.toInt() + memlayout.kernel_stack_page_count * page_size; // process's kernel stack
+    trapframe.kernel_satp = csr.Satp.readInt();
+    trapframe.kernel_sp = process.kernelStackAddress.toInt() + memlayout.kernel_stack_page_count * page_size;
     trapframe.kernel_trap = @intFromPtr(&usertrap);
-    trapframe.kernel_hartid = riscv.Register.read(.tp); // hartid for cpuid()
+    trapframe.kernel_hartid = riscv.Register.read(.tp);
 
-    // set up the registers that trampoline.S's sret will use
-    // to get to user space.
-
-    // set S Previous Privilege mode to User.
     csr.Sstatus.chain()
-        .clear(.SPP) // clear SPP to 0 for user mode
-        .set(.SPIE) // enable interrupts in user mode
+        .clear(.SPP)
+        .set(.SPIE)
         .commit();
 
-    // set S Exception Program Counter to the saved user pc.
     csr.Sepc.write(trapframe.epc);
 
-    // tell trampoline.S the user page table to switch to.
-    const satp = csr.Satp.make(process.pageTable);
+    return csr.Satp.make(process.pageTable);
+}
 
-    // jump to userret in trampoline.S at the top of memory, which
-    // switches to the user page table, restores user registers,
-    // and switches to user mode with sret.
-    const trampoline_userret: *const fn (usize) callconv(.c) void = @ptrFromInt(memlayout.trampoline_virtual_int + (userret_int - trampoline_int));
-    trampoline_userret(satp);
+fn isKernelText(x: usize) bool {
+    return x >= 0x80000000 and x < 0x8000a000;
+}
+
+fn badKernelPc(x: usize) bool {
+    return !isKernelText(x);
 }
 
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
 export fn kerneltrap() void {
     const sepc = csr.Sepc.read();
+    const stval = csr.Stval.read();
+    const stvec = csr.Stvec.read();
     const sstatus = csr.Sstatus.read();
     const scause = csr.Scause.read();
 
     if (!csr.Sstatus.isSet(.SPP)) {
+        print("KERNELVEC GOT USER TRAP\n", .{});
+        print("scause={x} sepc={x} stval={x} stvec={x} sp={x} ra={x}\n", .{
+            scause.raw(),
+            sepc,
+            stval,
+            stvec,
+            riscv.Register.read(.sp),
+            riscv.Register.read(.ra),
+        });
         @panic("kerneltrap: not from supervisor mode");
+    }
+    if (badKernelPc(sepc)) {
+        print("BAD SUPERVISOR PC sepc={x} stval={x} stvec={x} sp={x} ra={x}\n", .{
+            sepc,
+            stval,
+            stvec,
+            riscv.Register.read(.sp),
+            riscv.Register.read(.ra),
+        });
+        @panic("bad supervisor sepc on trap entry");
     }
     if (conc.interrupts.isEnabled()) {
         @panic("kerneltrap: interrupts enabled");
