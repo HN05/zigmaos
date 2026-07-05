@@ -1,5 +1,3 @@
-// Much of this code comes from https://github.com/binarycraft007/xv6-riscv-zig
-
 const std = @import("std");
 const mem = std.mem;
 const RunStep = std.Build.Step.Run;
@@ -104,6 +102,46 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/kernel/kernel.zig"),
         .target = target,
         .optimize = .ReleaseSmall,
+    });
+
+    const initcode_obj = b.addSystemCommand(&.{
+        "riscv64-linux-gnu-gcc",
+        "-march=rv64g",
+        "-mabi=lp64",
+        "-nostdlib",
+        "-nostartfiles",
+        "-c",
+        "-o",
+    });
+    const initcode_obj_file = initcode_obj.addOutputFileArg("initcode.o");
+    initcode_obj.addFileArg(b.path("src/kernel/execution/initcode.S"));
+
+    const initcode_elf = b.addSystemCommand(&.{
+        "riscv64-linux-gnu-ld",
+        "-z",
+        "max-page-size=4096",
+        "--no-warn-rwx-segments",
+        "-N",
+        "-e",
+        "start",
+        "-Ttext",
+        "0",
+        "-o",
+    });
+    const initcode_elf_file = initcode_elf.addOutputFileArg("initcode.elf");
+    initcode_elf.addFileArg(initcode_obj_file);
+
+    const initcode_bin = b.addSystemCommand(&.{
+        "riscv64-linux-gnu-objcopy",
+        "-S",
+        "-O",
+        "binary",
+    });
+    initcode_bin.addFileArg(initcode_elf_file);
+    const initcode_bin_file = initcode_bin.addOutputFileArg("initcode.bin");
+
+    kernel_mod.addAnonymousImport("initcode_bin", .{
+        .root_source_file = initcode_bin_file,
     });
 
     kernel_mod.addCSourceFiles(.{ .files = &kernel_src, .flags = &cflags });

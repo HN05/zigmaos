@@ -243,7 +243,7 @@ fn free(process: *Process) void {
 // a user program that calls exec("/init")
 // assembled from ../user/initcode.S
 // od -t xC ../user/initcode
-const initcode = @embedFile("initcode.bin");
+const initcode = @embedFile("initcode_bin");
 
 // nice formatted
 // const initcode = [_]u8 {
