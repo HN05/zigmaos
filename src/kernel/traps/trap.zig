@@ -122,14 +122,6 @@ pub fn prepareReturn() usize {
     return csr.Satp.make(process.pageTable);
 }
 
-fn isKernelText(x: usize) bool {
-    return x >= 0x80000000 and x < 0x8000a000;
-}
-
-fn badKernelPc(x: usize) bool {
-    return !isKernelText(x);
-}
-
 // interrupts and exceptions from kernel code go here via kernelvec,
 // on whatever the current kernel stack is.
 export fn kerneltrap() void {
@@ -150,21 +142,6 @@ export fn kerneltrap() void {
             riscv.Register.read(.ra),
         });
         @panic("kerneltrap: not from supervisor mode");
-    }
-    if (badKernelPc(sepc)) {
-        print("sp={x} kstack_lowest={x} trapframe={x}\n", .{
-            riscv.Register.read(.sp),
-            memlayout.kernelStackAddress(common.param.NPROC - 1).toInt(),
-            memlayout.trapframe_virtual_address.toInt(),
-        });
-        print("BAD SUPERVISOR PC sepc={x} stval={x} stvec={x} sp={x} ra={x}\n", .{
-            sepc,
-            stval,
-            stvec,
-            riscv.Register.read(.sp),
-            riscv.Register.read(.ra),
-        });
-        @panic("bad supervisor sepc on trap entry");
     }
     if (conc.interrupts.isEnabled()) {
         @panic("kerneltrap: interrupts enabled");
