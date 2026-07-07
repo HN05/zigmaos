@@ -10,4 +10,4 @@ pub const log_size = (max_num_operation_blocks * 3); // max data blocks in on-di
 pub const NBUF = (max_num_operation_blocks * 3); // size of disk block cache
 pub const FSSIZE = 2000; // size of file system in blocks
 pub const MAXPATH = 128; // maximum file path name
-pub const kernel_stack_page_count = 2; // pages used for kernel stack
+pub const kernel_stack_page_count = 6; // pages used for kernel stack
