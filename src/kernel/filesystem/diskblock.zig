@@ -9,8 +9,8 @@ pub const bitmap_bits_per_block = block_size * 8;
 const DiskBlock = @This();
 pub const BlockNumber = u32;
 
-number: BlockNumber,
-device: Device.ID,
+number: BlockNumber = 0,
+device: Device.ID = .zero,
 
 // Zero a block.
 fn zero(block: DiskBlock) void {

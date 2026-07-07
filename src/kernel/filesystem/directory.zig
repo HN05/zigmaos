@@ -71,7 +71,7 @@ pub fn linkEntry(directory: *const Directory, name: []const u8, inode_number: u3
 
     // Look for an empty dirent.
     var current_offset: u32 = 0;
-    var entry: DirectoryEntry = undefined;
+    var entry: DirectoryEntry = .{};
 
     while (current_offset < directory.inode.disk_inode.size) : (current_offset += entry_size) {
         const read_bytes = directory.inode.read(.fromPtr(&entry), current_offset, entry_size) catch @panic("linkEntry: could not read directory");

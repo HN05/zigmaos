@@ -25,8 +25,8 @@ const drivers = kernel.drivers;
 const Buffer = @This();
 
 is_valid: bool = false, // has data been read from disk?
-disk_owned: bool = undefined, // does disk "own" buf?
-block: DiskBlock = undefined,
+disk_owned: bool = false, // does disk "own" buf?
+block: DiskBlock = .{},
 lock: Mutex = .init(.sleep, "buffer"),
 reference_count: u32 = 0,
 previous: *Buffer = undefined, // LRU cache list
