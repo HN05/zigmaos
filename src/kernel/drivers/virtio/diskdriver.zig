@@ -268,7 +268,9 @@ pub fn interrupt() void {
         fullMemoryBarrier();
         const id = disk.used.ring[disk.used_idx % Queue.size].id;
 
+        if (id >= Queue.size) @panic("virtio used id out of range");
         if (disk.info[id].status != .ok) @panic("virtio disk interrupt status");
+        if (disk.info[id].buffer == null) @panic("virtio null completion buffer");
 
         const buffer = disk.info[id].buffer.?;
         buffer.disk_owned = false; // disk is done with buf

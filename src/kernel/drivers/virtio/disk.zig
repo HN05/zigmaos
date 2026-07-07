@@ -66,7 +66,7 @@ pub const BufferStatus = enum(u8) {
     pending = 0xff, // driver-only sentinel, not written by device
 };
 
-pub const StatusBuffer = struct {
+pub const StatusBuffer = extern struct {
     buffer: ?*Buffer,
     status: BufferStatus, // passed to device, and overwritten when it is finished
 };

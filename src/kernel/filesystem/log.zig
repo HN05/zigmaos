@@ -33,7 +33,7 @@ const Mutex = kernel.concurrency.Mutex;
 
 // Contents of the header block, used for both the on-disk header block
 // and to keep track in memory of logged block# before commit.
-const Header = struct {
+const Header = extern struct {
     length: u32,
     block: [common.param.log_size]DiskBlock.BlockNumber,
 
