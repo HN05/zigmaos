@@ -7,10 +7,10 @@
 _entry:
         # set up a stack for C.
         # stack0 is declared in start.c,
-        # with a 4096-byte stack per CPU.
-        # sp = stack0 + (hartid * 4096)
+        # with a 16 KiB stack per CPU.
+        # sp = stack0 + ((hartid + 1) * 16384)
         la sp, stack0
-        li a0, 1024*4
+        li a0, 1024*16   # must match boot_stack_bytes_per_cpu in kernel.zig
         csrr a1, mhartid
         addi a1, a1, 1
         mul a0, a0, a1

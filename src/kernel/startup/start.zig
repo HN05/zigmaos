@@ -74,10 +74,10 @@ fn timerinit() void {
     // scratch[0..2] : space for timervec to save registers.
     // scratch[3] : address of CLINT MTIMECMP register.
     // scratch[4] : desired interval (in cycles) between timer interrupts.
-    var scratch = timer_scratch[id];
+    const scratch = &timer_scratch[id];
     scratch[3] = @intFromPtr(ml.clint_mtimecmp(id));
     scratch[4] = interval;
-    csr.Mscratch.write(@intFromPtr(&scratch));
+    csr.Mscratch.write(@intFromPtr(scratch));
 
     // set the machine-mode trap handler.
     csr.Mtvec.write(@intFromPtr(&timervec));

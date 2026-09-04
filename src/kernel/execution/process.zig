@@ -42,10 +42,10 @@ pub var waitLock: Mutex = .init(.spin, "wait_lock");
 // Map it high in memory, followed by an invalid
 // guard page.
 pub fn mapKernelStacks(map_func: *const fn (ad.UserAddress, ad.KernelAddress, usize, mem.pages.MappingKind) void) void {
-    inline for (0..processTable.len) |index| {
+    for (0..processTable.len) |index| {
         const virtualAddress = ml.kernelStackAddress(index);
 
-        inline for (0..ml.kernel_stack_page_count) |i| {
+        for (0..ml.kernel_stack_page_count) |i| {
             const virtual_page_address = virtualAddress.add(i * mem.pages.page_size);
 
             const physical_page = allocation.allocPage(.garbage) orelse @panic("could not get mem to map stacks");

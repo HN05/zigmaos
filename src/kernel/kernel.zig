@@ -19,7 +19,8 @@ export fn start() void {
 }
 
 // entry.S needs one stack per CPU.
-const stack_size: usize = 4096 * param.NCPU;
+const stack_size: usize = boot_stack_bytes_per_cpu * param.NCPU;
+const boot_stack_bytes_per_cpu: usize = 16 * 1024; // must match entry.S
 
 // entry.S needs one stack per CPU.
 export var stack0 align(16) = [_]u8{0} ** stack_size;
