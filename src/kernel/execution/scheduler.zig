@@ -63,7 +63,8 @@ pub fn switchToScheduler() void {
 
     const previous_interrupt_state = cpu.interruptsEnabled;
     switchContext(&process.context, &cpu.context);
-    cpu.interruptsEnabled = previous_interrupt_state;
+    // We may have been resumed on a different CPU, so re-read the current
+    Cpu.getCurrent().interruptsEnabled = previous_interrupt_state;
 }
 
 // Give up the CPU for one scheduling round.
